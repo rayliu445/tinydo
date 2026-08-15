@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-screen overflow-hidden" :style="{ backgroundColor: 'var(--bg-app)' }">
+  <div class="flex h-full overflow-hidden" :style="{ backgroundColor: 'var(--bg-app)' }">
     <!-- ============ 左侧边栏 ============ -->
     <aside
       class="flex-shrink-0 flex flex-col border-r select-none transition-all duration-150"
