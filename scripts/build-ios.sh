@@ -38,6 +38,10 @@ echo "[1/4] Building web assets..."
 cd "$PROJECT_DIR"
 npm run build
 
+# 1.5 生成 iOS AppIcon（从 resources/icon.png 平铺白色去 alpha，与桌面图标一致）
+echo "   Generating iOS AppIcon from desktop icon..."
+bash "$SCRIPT_DIR/generate-ios-icon.sh"
+
 # 2. 对齐 iOS 部署目标（cap add ios 模板默认 14.0，@capacitor/ios 8.x 要求 15.0+）
 #    需要同时修正：
 #    a) Podfile 的 platform（cap sync 触发 pod install 时校验）

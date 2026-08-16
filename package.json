@@ -1,6 +1,6 @@
 {
   "name": "tinydo",
-  "version": "0.1.14",
+  "version": "0.1.15",
   "scripts": {
     "dev": "vite",
     "stop": "kill $(lsof -ti:3000)",

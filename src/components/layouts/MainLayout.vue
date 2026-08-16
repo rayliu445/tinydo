@@ -200,8 +200,8 @@
           </transition>
         </router-view>
       </div>
-      <!-- 第四列：详情面板（仅列表视图且窗口≥1000px 时显示；窗口窄时隐藏，保证中间列宽度） -->
-      <TaskDetailPanel v-show="detailPanelVisible" />
+      <!-- 第四列：详情面板（宽屏为右侧栏；窄屏为全屏浮层，选中任务时滑出） -->
+      <TaskDetailPanel v-show="detailPanelVisible" :overlay="windowWidth < 1000" />
     </main>
 
     <!-- 全局右键快捷菜单 -->
@@ -221,7 +221,7 @@ import ContextMenu from '../ContextMenu.vue'
 const route = useRoute()
 const router = useRouter()
 const todoStore = useTodoStore()
-const { todos } = storeToRefs(todoStore)
+const { todos, selectedTodoId } = storeToRefs(todoStore)
 
 // 添加任务按钮选中态（与其他导航按钮一致：点击保持高亮，点击其他按钮时切换走）
 const isAddActive = ref(false)
@@ -313,8 +313,13 @@ onMounted(() => {
 })
 onUnmounted(() => window.removeEventListener('resize', updateWindowWidth))
 
-// 详情面板最终显示：列表视图 + 窗口宽度≥1000px（三列布局至少需≈1000px）
-const detailPanelVisible = computed(() => showDetailPanel.value && windowWidth.value >= 1000)
+// 详情面板最终显示：列表视图 + （窗口宽度≥1000px 三列布局，或窄屏选中任务时全屏浮层）
+const detailPanelVisible = computed(() => {
+  if (!showDetailPanel.value) return false
+  if (windowWidth.value >= 1000) return true
+  // 窄屏：仅当选中任务时才以全屏浮层显示（避免空态面板占满屏幕）
+  return !!selectedTodoId.value
+})
 
 // 中列是否显示：窄屏(<1000px)强制收起中列（图标栏提供入口）；
 // 宽屏按原逻辑：任务列表视图（收集箱/今天/最近7天）与笔记视图显示；日历/四象限/搜索/设置时隐藏

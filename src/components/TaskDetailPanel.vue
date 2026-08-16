@@ -1,6 +1,7 @@
 <template>
   <div
-    class="w-[400px] flex-shrink-0 flex flex-col border-l overflow-hidden"
+    class="flex flex-col overflow-hidden"
+    :class="overlay ? 'fixed inset-0 z-50 w-full' : 'w-[400px] flex-shrink-0 border-l'"
     :style="{ borderColor: 'var(--border-color)', backgroundColor: 'var(--bg-card)' }"
   >
     <!-- ===== 头部 ===== -->
@@ -223,6 +224,10 @@ import AppIcon from './icons/AppIcon.vue'
 
 const todoStore = useTodoStore()
 const { todos, selectedTodoId } = storeToRefs(todoStore)
+
+// 窄屏浮层模式：由父组件传入（宽屏为右侧栏，窄屏全屏覆盖）
+const props = defineProps<{ overlay?: boolean }>()
+const overlay = computed(() => props.overlay ?? false)
 
 // 当前编辑目标：优先内部切换（点击子任务），否则为全局选中任务
 const overrideId = ref<string | null>(null)
