@@ -427,6 +427,18 @@ export class KodoProvider implements CloudProvider {
         const errBody = await res.text().catch(() => '')
         throw new Error(`上传失败 (${res.status}: ${errBody})`)
       }
+      // 【关键】解析上传响应的 hash（七牛 etag）并更新 _etag。
+      // 否则 watch 轮询会把“自己刚上传的内容”误判为云端变化，再次触发同步，
+      // 形成 上传→watch change→再同步→再上传 的无限循环（每次 replaceAll 全量
+      // DELETE+INSERT 改变 SQLite 文件布局，export 字节每次不同，etag 永远在变，
+      // 循环永不终止，堆内存持续膨胀）。
+      const bodyText = await res.text().catch(() => '')
+      try {
+        const parsed = JSON.parse(bodyText)
+        if (parsed && typeof parsed.hash === 'string') {
+          this._etag = parsed.hash
+        }
+      } catch { /* 响应非 JSON 时忽略，watch 回退 stat 对比 */ }
     } catch (err) {
       console.error('[Kodo] Write error:', err)
       throw err

@@ -22,6 +22,9 @@ export class SyncEngine {
   private writeTimer: number | null = null
   private stateListeners: Set<(state: SyncState) => void> = new Set()
   private _initialized = false
+  // 重入锁：防止 autoSync / watch / scheduleWrite 并发触发多个 syncNow 叠加执行
+  // （叠加的全量查询 + 全量重插 + export + 上传会让 GC 追不上，堆内存持续膨胀）
+  private _syncing = false
 
   // 防抖：500ms 内多次写入只触发一次
   private pendingWrite = false
@@ -122,6 +125,26 @@ export class SyncEngine {
         error: 'Sync not configured',
       }
     }
+    // 重入保护：已有同步在进行中则稍后重试，避免并发叠加
+    // （watch 轮询 / autoSync 定时器 / scheduleWrite 可能同时触发 syncNow，
+    //   直接跳过会让用户的修改延迟到下一个 autoSync 周期才推送）
+    if (this._syncing) {
+      if (this.writeTimer === null) {
+        this.writeTimer = window.setTimeout(async () => {
+          this.writeTimer = null
+          await this.syncNow()
+        }, this.WRITE_DEBOUNCE_MS)
+      }
+      return {
+        success: false,
+        merged: false,
+        changesIncoming: 0,
+        changesOutgoing: 0,
+        duration: 0,
+        error: 'Sync already in progress',
+      }
+    }
+    this._syncing = true
 
     const startTime = Date.now()
     this.state.status = 'syncing'
@@ -138,10 +161,12 @@ export class SyncEngine {
       // 2. 云端数据（CRDT 文档，含 deleted 标记）
       let cloudTodos: Todo[] = []
       let cloudBytes: number | null = null
+      let cloudDocBytes: Uint8Array | null = null
       try {
         const cloudData = await this.provider.read(this.CLOUD_FILE)
         if (cloudData) {
           cloudBytes = cloudData.length
+          cloudDocBytes = cloudData
           const cloudDoc = loadDoc(cloudData)
           const snap = getDocSnapshot(cloudDoc)
           cloudTodos = Object.values(snap.todos) as Todo[]
@@ -163,6 +188,7 @@ export class SyncEngine {
           error: this.state.lastError,
         }
         this.notifyState()
+        this._syncing = false
         return {
           success: false,
           merged: false,
@@ -178,13 +204,22 @@ export class SyncEngine {
       const mergedLive = mergedAll.filter(t => !t.deleted)
       const changesIncoming = Math.max(0, mergedLive.length - localLive.length)
 
-      // 4. 合并结果写回本地 SQLite（保留 tombstone），并通知 UI 刷新
-      dataAccess.replaceAll(mergedAll)
-      await dataAccess.save()
+      // 4. 合并结果写回本地 SQLite（保留 tombstone），并通知 UI 刷新。
+      //    数据无变化时跳过，避免每次同步都全量 DELETE+INSERT：
+      //    - SQLite 文件内部布局变化 → db.export() 字节每次不同
+      //    - 上传字节不同 → 云端 etag 变化 → watch 误判为他人改动 → 再次同步（无限循环）
+      if (!sameTodos(mergedAll, localAll)) {
+        dataAccess.replaceAll(mergedAll)
+        await dataAccess.save()
+      }
 
-      // 5. 合并结果上传云端（云端始终是权威副本，含 tombstone 传播删除）
+      // 5. 合并结果上传云端（云端始终是权威副本，含 tombstone 传播删除）。
+      //    内容与云端一致时跳过上传，避免 self-watch 死循环 + 浪费流量。
       const doc = fromJS({ todos: mergedAll })
-      await this.provider.write(this.CLOUD_FILE, saveDoc(doc))
+      const docBytes = saveDoc(doc)
+      if (!cloudDocBytes || !sameBytes(docBytes, cloudDocBytes)) {
+        await this.provider.write(this.CLOUD_FILE, docBytes)
+      }
 
       // 更新状态
       this.state.status = 'idle'
@@ -224,6 +259,8 @@ export class SyncEngine {
         duration: Date.now() - startTime,
         error: this.state.lastError!,
       }
+    } finally {
+      this._syncing = false
     }
   }
 
@@ -239,6 +276,7 @@ export class SyncEngine {
 
     this.pendingWrite = true
     this.writeTimer = window.setTimeout(async () => {
+      this.writeTimer = null
       this.pendingWrite = false
       await this.syncNow()
     }, this.WRITE_DEBOUNCE_MS)
@@ -313,10 +351,14 @@ export class SyncEngine {
         console.log('[SyncEngine] 首次同步：云端无文件，将上传本地数据')
       }
 
-      // 与云端做 LWW 合并后写回本地（含 tombstone，删除可传播）
+      // 与云端做 LWW 合并后写回本地（含 tombstone，删除可传播）。
+      // 数据无变化时跳过 replaceAll，避免全量 DELETE+INSERT 改变 SQLite 文件布局
+      // 导致后续每次 syncNow 的上传字节不同，触发 self-watch 同步死循环。
       const mergedAll = mergeTodosByUpdatedAt(localAll, cloudTodos)
-      dataAccess.replaceAll(mergedAll)
-      await dataAccess.save()
+      if (!sameTodos(mergedAll, localAll)) {
+        dataAccess.replaceAll(mergedAll)
+        await dataAccess.save()
+      }
       this.state.lastSyncDetail = {
         time: new Date().toISOString(),
         cloudBytes,
@@ -377,6 +419,29 @@ export class SyncEngine {
 }
 
 // ============ 多端合并工具 ============
+
+/**
+ * 判断两组 todos 内容是否一致（忽略顺序，按 id 排序后比较）。
+ * 用于同步时跳过无变化的 replaceAll / upload，避免 self-watch 死循环。
+ */
+function sameTodos(a: Todo[], b: Todo[]): boolean {
+  if (a.length !== b.length) return false
+  const sig = (list: Todo[]) =>
+    list.map(t => [t.id, JSON.stringify(t)] as const)
+      .sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
+      .map(([, s]) => s)
+      .join('\u0001')
+  return sig(a) === sig(b)
+}
+
+/** 判断两个字节数组内容是否一致 */
+function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
+  if (a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    if (a[i] !== b[i]) return false
+  }
+  return true
+}
 
 /**
  * LWW（Last-Write-Wins，后写覆盖）合并：
