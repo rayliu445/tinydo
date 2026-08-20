@@ -27,8 +27,18 @@ if ! command -v python3 &>/dev/null; then
 fi
 
 if ! python3 -c "import PIL" &>/dev/null; then
-  echo "❌ 未安装 Pillow，请先运行: pip3 install Pillow"
-  exit 1
+  echo "   ⚠️  未安装 Pillow，尝试自动安装..."
+  python3 -m pip install Pillow --quiet 2>/dev/null \
+    || python3 -m pip install --user Pillow --quiet 2>/dev/null \
+    || python3 -m pip install --break-system-packages Pillow --quiet 2>/dev/null \
+    || {
+      echo "❌ 未安装 Pillow 且自动安装失败，请先运行: pip3 install Pillow"
+      exit 1
+    }
+  if ! python3 -c "import PIL" &>/dev/null; then
+    echo "❌ Pillow 安装后仍不可用"
+    exit 1
+  fi
 fi
 
 python3 - "$SRC" "$OUT" <<'PY'
