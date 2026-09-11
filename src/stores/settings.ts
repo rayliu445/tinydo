@@ -30,12 +30,16 @@ export interface AiSettings {
 export interface TtsSettings {
   /** AI 回复后自动朗读（关闭时仍可点消息上的朗读按钮） */
   autoSpeak: boolean
-  /** edge = Edge TTS（默认，云端神经网络语音，音质自然）；system = 系统语音（离线兜底） */
-  engine: 'system' | 'edge'
-  /** Edge TTS 声音名 */
+  /** edge = Edge TTS（免 Key，非官方接口可能被限流）；azure = Azure 官方接口（稳定，需自备 Key，免费层每月 50 万字符）；system = 系统语音（离线兜底） */
+  engine: 'system' | 'edge' | 'azure'
+  /** Edge/Azure 共用的神经音色名 */
   edgeVoice: string
   /** 语速 0.5 ~ 2，1 = 原速 */
   rate: number
+  /** Azure Speech 区域（如 eastasia） */
+  azureRegion: string
+  /** Azure Speech 密钥（仅存本机） */
+  azureKey: string
 }
 
 export interface AppSettings {
@@ -81,6 +85,8 @@ const DEFAULT_SETTINGS: AppSettings = {
     engine: 'edge',
     edgeVoice: 'zh-CN-XiaoxiaoNeural',
     rate: 1,
+    azureRegion: 'eastasia',
+    azureKey: '',
   },
 }
 

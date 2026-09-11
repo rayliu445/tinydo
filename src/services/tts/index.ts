@@ -10,8 +10,10 @@
 
 import { reactive } from 'vue'
 import { EDGE_TTS_MAX_CHARS, edgeSynthesize, splitTextForTts } from './edge-tts'
+import { azureSynthesize } from './azure-tts'
+import type { TtsSettings } from '../../stores/settings'
 
-export type TtsEngine = 'system' | 'edge'
+export type TtsEngine = 'system' | 'edge' | 'azure'
 
 export interface TtsConfig {
   engine: TtsEngine
@@ -19,6 +21,28 @@ export interface TtsConfig {
   voice: string
   /** 语速，1 = 原速，范围 0.5 ~ 2 */
   rate: number
+  /** Azure 官方引擎参数（engine = 'azure' 时必须） */
+  azure?: { region: string; key: string }
+}
+
+/**
+ * 从设置 store 的 TtsSettings 组装朗读配置（调用方便捷入口）
+ */
+export function speakWithSettings(
+  text: string,
+  tts: TtsSettings,
+  opts?: { messageId?: string | null },
+): Promise<TtsEngine> {
+  return speak(
+    text,
+    {
+      engine: tts.engine,
+      voice: tts.edgeVoice,
+      rate: tts.rate,
+      azure: { region: tts.azureRegion, key: tts.azureKey },
+    },
+    opts,
+  )
 }
 
 /** 响应式播放状态（组件直接引用显示播放中状态） */
@@ -28,6 +52,8 @@ export const ttsState = reactive({
   speakingMessageId: null as string | null,
   /** 实际使用的引擎（Edge 降级后为 system，供调试/提示） */
   engineUsed: null as TtsEngine | null,
+  /** 最近一次降级原因（设置页展示，帮助用户判断 Edge TTS 是否可用） */
+  lastFallbackReason: null as string | null,
 })
 
 let generation = 0 // 打断计数：新请求 +1，旧请求的回调发现代号不一致即放弃
@@ -66,10 +92,27 @@ export async function speak(
       try {
         await edgeSpeakWithFallbackGuard(clean, cfg, gen)
         ttsState.engineUsed = 'edge'
+        ttsState.lastFallbackReason = null
         return 'edge'
       } catch (err) {
         if (gen !== generation) return ttsState.engineUsed ?? 'system' // 已被新请求打断
-        console.warn('[TTS] Edge TTS 失败，自动降级为系统语音:', err)
+        const reason = err instanceof Error ? err.message : String(err)
+        ttsState.lastFallbackReason = reason
+        ttsState.engineUsed = 'system' // 降级决策立即标记，朗读中即可在设置页看到
+        console.warn('[TTS] Edge TTS 失败，自动降级为系统语音:', reason)
+      }
+    } else if (cfg.engine === 'azure') {
+      try {
+        await azureSpeakWithFallbackGuard(clean, cfg, gen)
+        ttsState.engineUsed = 'azure'
+        ttsState.lastFallbackReason = null
+        return 'azure'
+      } catch (err) {
+        if (gen !== generation) return ttsState.engineUsed ?? 'system' // 已被新请求打断
+        const reason = err instanceof Error ? err.message : String(err)
+        ttsState.lastFallbackReason = reason
+        ttsState.engineUsed = 'system'
+        console.warn('[TTS] Azure TTS 失败，自动降级为系统语音:', reason)
       }
     }
     await systemSpeak(clean, cfg.rate, gen)
@@ -89,6 +132,22 @@ async function edgeSpeakWithFallbackGuard(text: string, cfg: TtsConfig, gen: num
   for (const chunk of chunks) {
     if (gen !== generation) return // 被打断
     const blob = await edgeSynthesize(chunk, cfg.voice, cfg.rate)
+    if (gen !== generation) return
+    await playAudioBlob(blob)
+  }
+}
+
+/** Azure 官方引擎：分段合成 + 顺序播放；任一段失败抛错（触发整体降级） */
+async function azureSpeakWithFallbackGuard(text: string, cfg: TtsConfig, gen: number): Promise<void> {
+  const chunks = splitTextForTts(text, EDGE_TTS_MAX_CHARS)
+  for (const chunk of chunks) {
+    if (gen !== generation) return
+    const blob = await azureSynthesize(chunk, {
+      region: cfg.azure?.region ?? '',
+      key: cfg.azure?.key ?? '',
+      voice: cfg.voice,
+      rate: cfg.rate,
+    })
     if (gen !== generation) return
     await playAudioBlob(blob)
   }

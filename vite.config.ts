@@ -43,6 +43,23 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (p) => p.replace(/^\/qiniu-dl/, ''),
       },
+      // Edge TTS WebSocket 代理（dev）：
+      // 微软按请求特征打分，浏览器 WS 无法自定义 Origin/UA 等头，直连常被 403。
+      // 同源代理在转发时补全真客户端头（与官方 edge-tts 库一致），使 Web dev 可用。
+      // 生产 Web 需部署平台支持 WS 反代（Netlify Edge Functions 等），否则自动降级系统语音。
+      '/tts-edge': {
+        target: 'wss://speech.platform.bing.com',
+        changeOrigin: true,
+        ws: true,
+        rewrite: (p) => p.replace(/^\/tts-edge/, '/consumer/speech/synthesize/readaloud/edge/v1'),
+        headers: {
+          'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0',
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache',
+          'Accept-Language': 'en-US,en;q=0.9',
+        },
+      },
     },
   },
   build: {

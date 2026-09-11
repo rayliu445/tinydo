@@ -8,13 +8,39 @@
  */
 
 const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
-const EDGE_TTS_WS_URL =
-  'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1'
+const EDGE_TTS_WS_PATH = '/consumer/speech/synthesize/readaloud/edge/v1'
 // 必须跟随较新的 Edge 版本，过旧版本号会被 403 拒绝（社区 edge-tts 项目同步维护）
 const GEC_VERSION = '1-143.0.3650.75'
 const OUTPUT_FORMAT = 'audio-24khz-48kbitrate-mono-mp3'
 const CONNECT_TIMEOUT_MS = 10000
 const STREAM_TIMEOUT_MS = 60000
+
+// ============ 环境分发（与 kodo.ts 同思路） ============
+// 微软按「请求特征」打分（Origin/UA/头完整性），浏览器 WS 无法自定义这些头，
+// 直连常被 403。因此：
+// - Electron / Capacitor 原生：直连官方 wss（原生网络栈无浏览器头限制的部分特征，
+//   仍可能被风控拒绝，失败自动降级系统语音）
+// - Web dev：走同源 /tts-edge（vite proxy 转发并补全真客户端头，见 vite.config.ts）
+// - Web 生产：/tts-edge 不存在则连接失败，自动降级；可自建反代支持
+import { Capacitor } from '@capacitor/core'
+
+function isElectronEnv(): boolean {
+  if (typeof window === 'undefined') return false
+  if ((window as any).electronAPI) return true
+  if (typeof location !== 'undefined' && location.protocol === 'file:') return true
+  return false
+}
+
+const DIRECT = isElectronEnv() || (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform())
+
+function wsEndpointUrl(query: string): string {
+  if (DIRECT) {
+    return `wss://speech.platform.bing.com${EDGE_TTS_WS_PATH}?${query}`
+  }
+  // 同源代理：http(s) 页面下用对应 ws(s) scheme 连本机
+  const scheme = typeof location !== 'undefined' && location.protocol === 'https:' ? 'wss' : 'ws'
+  return `${scheme}://${location.host}/tts-edge?${query}`
+}
 
 export interface EdgeVoice {
   value: string
@@ -76,6 +102,14 @@ function rateToPercent(rate: number): string {
   return `${pct >= 0 ? '+' : ''}${pct}%`
 }
 
+/** 组装 SSML（Edge TTS 与 Azure 官方接口共用同一套神经音色名） */
+export function buildSsml(voice: string, text: string, rate = 1): string {
+  return (
+    `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>` +
+    `<voice name='${xmlEscape(voice)}'><prosody rate='${rateToPercent(rate)}' pitch='+0Hz' volume='+0%'>${xmlEscape(text)}</prosody></voice></speak>`
+  )
+}
+
 /**
  * 合成一段文本（≤ EDGE_TTS_MAX_CHARS 字符）为 MP3 Blob。
  * 失败（连接被拒 / 超时 / 无音频）抛 Error，由调用方降级。
@@ -101,7 +135,10 @@ export function edgeSynthesize(text: string, voice: string, rate = 1): Promise<B
     ;(async () => {
       try {
         const gec = await genSecMsGec()
-        const url = `${EDGE_TTS_WS_URL}?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=${GEC_VERSION}`
+        const connectionId = uuidNoDash() // 官方客户端必带 ConnectionId（无横线 UUID），缺失会被风控拒绝
+        const url = wsEndpointUrl(
+          `TrustedClientToken=${TRUSTED_CLIENT_TOKEN}&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=${GEC_VERSION}&ConnectionId=${connectionId}`,
+        )
         ws = new WebSocket(url)
         ws.binaryType = 'arraybuffer'
       } catch (err) {
@@ -125,9 +162,7 @@ export function edgeSynthesize(text: string, voice: string, rate = 1): Promise<B
           `{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"${OUTPUT_FORMAT}"}}}}`,
         )
         // 2. SSML
-        const ssml =
-          `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>` +
-          `<voice name='${voice}'><prosody rate='${rateToPercent(rate)}' pitch='+0Hz' volume='+0%'>${xmlEscape(text)}</prosody></voice></speak>`
+        const ssml = buildSsml(voice, text, rate)
         ws.send(
           `X-RequestId:${uuidNoDash()}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${timestamp()}\r\nPath:ssml\r\n\r\n${ssml}`,
         )

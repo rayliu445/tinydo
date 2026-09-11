@@ -260,7 +260,7 @@ import { useAiChatStore, type ChatBubble } from '../stores/ai-chat'
 import { useTodoStore } from '../stores/todo'
 import { isAiConfigured } from '../services/ai/ai-client'
 import { useSettingsStore } from '../stores/settings'
-import { speak, stopSpeaking, ttsState } from '../services/tts'
+import { speakWithSettings, stopSpeaking, ttsState } from '../services/tts'
 import AppIcon from './icons/AppIcon.vue'
 
 const aiChat = useAiChatStore()
@@ -354,8 +354,7 @@ function toggleSpeak(m: ChatBubble) {
     stopSpeaking()
     return
   }
-  const tts = settingsStore.settings.tts
-  speak(m.content, { engine: tts.engine, voice: tts.edgeVoice, rate: tts.rate }, { messageId: m.id })
+  speakWithSettings(m.content, settingsStore.settings.tts, { messageId: m.id })
     .catch(err => console.warn('[AI] 朗读失败:', err))
 }
 

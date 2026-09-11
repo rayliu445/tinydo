@@ -15,7 +15,7 @@ import { useTodoStore, type Todo } from './todo'
 import { useSettingsStore } from './settings'
 import { getDataAccess, type AiThread } from '../services/data-access'
 import { getSyncEngine } from '../services/sync-engine'
-import { speak } from '../services/tts'
+import { speakWithSettings } from '../services/tts'
 import { chatCompletion, isAiConfigured, type AiClientConfig, type ChatMessage } from '../services/ai/ai-client'
 import {
   DEFAULT_COACH_SYSTEM_PROMPT,
@@ -457,11 +457,11 @@ export const useAiChatStore = defineStore('ai-chat', () => {
       })
       persistActiveThread()
 
-      // 自动朗读（设置开启时）；Edge 失败已在 speak 内部降级，静默即可
+      // 自动朗读（设置开启时）；Edge/Azure 失败已在 speak 内部降级，静默即可
       const ttsCfg = settingsStore.settings.tts
       if (ttsCfg.autoSpeak && parsed.content) {
         const msgId = messages.value[messages.value.length - 1].id
-        speak(parsed.content, { engine: ttsCfg.engine, voice: ttsCfg.edgeVoice, rate: ttsCfg.rate }, { messageId: msgId })
+        speakWithSettings(parsed.content, ttsCfg, { messageId: msgId })
           .catch(err => console.warn('[AI] 自动朗读失败:', err))
       }
     } catch (err) {
