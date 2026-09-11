@@ -17,6 +17,27 @@ export interface CloudProviderConfig {
   lastError?: string
 }
 
+/** 小柴配置（OpenAI 兼容接口，API Key 与同步密钥同级存 localStorage） */
+export interface AiSettings {
+  baseUrl: string
+  apiKey: string
+  model: string
+  /** 追加到默认系统提示词之后的用户自定义要求 */
+  customPrompt: string
+}
+
+/** 朗读（TTS）配置 */
+export interface TtsSettings {
+  /** AI 回复后自动朗读（关闭时仍可点消息上的朗读按钮） */
+  autoSpeak: boolean
+  /** edge = Edge TTS（默认，云端神经网络语音，音质自然）；system = 系统语音（离线兜底） */
+  engine: 'system' | 'edge'
+  /** Edge TTS 声音名 */
+  edgeVoice: string
+  /** 语速 0.5 ~ 2，1 = 原速 */
+  rate: number
+}
+
 export interface AppSettings {
   sync: SyncConfig
   providers: CloudProviderConfig[]
@@ -24,6 +45,8 @@ export interface AppSettings {
     defaultView: 'list' | 'calendar' | 'matrix'
     theme: 'light' | 'dark' | 'system'
   }
+  ai: AiSettings
+  tts: TtsSettings
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -46,6 +69,18 @@ const DEFAULT_SETTINGS: AppSettings = {
   ui: {
     defaultView: 'list',
     theme: 'system',
+  },
+  ai: {
+    baseUrl: 'https://api.deepseek.com/v1',
+    apiKey: '',
+    model: 'deepseek-chat',
+    customPrompt: '',
+  },
+  tts: {
+    autoSpeak: false,
+    engine: 'edge',
+    edgeVoice: 'zh-CN-XiaoxiaoNeural',
+    rate: 1,
   },
 }
 
@@ -196,6 +231,18 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettings(settings.value)
   }
 
+  /** 更新小柴配置 */
+  function updateAiSettings(ai: Partial<AiSettings>) {
+    settings.value.ai = { ...settings.value.ai, ...ai }
+    saveSettings(settings.value)
+  }
+
+  /** 更新朗读（TTS）配置 */
+  function updateTtsSettings(tts: Partial<TtsSettings>) {
+    settings.value.tts = { ...settings.value.tts, ...tts }
+    saveSettings(settings.value)
+  }
+
   return {
     settings,
     activeProvider,
@@ -209,6 +256,8 @@ export const useSettingsStore = defineStore('settings', () => {
     testKodoConnection,
     syncNow,
     updateUISettings,
+    updateAiSettings,
+    updateTtsSettings,
   }
 })
 
@@ -228,7 +277,14 @@ function loadSettings(): AppSettings {
         const saved = savedProviders.find((sp: any) => sp.id === dp.id)
         return saved ? { ...dp, ...saved } : dp
       })
-      return { ...DEFAULT_SETTINGS, ...parsed, providers: mergedProviders }
+      // ai / tts 配置浅合并：旧版本 localStorage 缺字段时补齐默认值
+      return {
+        ...DEFAULT_SETTINGS,
+        ...parsed,
+        providers: mergedProviders,
+        ai: { ...DEFAULT_SETTINGS.ai, ...(parsed.ai || {}) },
+        tts: { ...DEFAULT_SETTINGS.tts, ...(parsed.tts || {}) },
+      }
     }
   } catch {
     // ignore

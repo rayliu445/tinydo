@@ -27,6 +27,19 @@ export interface Todo {
   kind?: 'TASK' | 'NOTE' // 笔记类型，默认 TASK
 }
 
+/** 小柴会话线程（messagesJson 为消息数组的 JSON 序列化，数据层不感知聊天结构） */
+export interface AiThread {
+  id: string
+  title: string
+  focusTodoId?: string
+  summary: string
+  summarizedCount: number
+  messagesJson: string
+  deleted?: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 export interface DataAccess {
   initialize(): Promise<void>
   getTodos(): Todo[]
@@ -38,6 +51,10 @@ export interface DataAccess {
   updateTodo(id: string, updates: Partial<Todo>): void
   removeTodo(id: string): void
   toggleTodo(id: string): void
+  getAiThreads(): AiThread[]
+  getAiThreadById(id: string): AiThread | undefined
+  saveAiThread(thread: AiThread): void
+  replaceAllAiThreads(threads: AiThread[]): void
   save(): Promise<void>
   exportJSON(): string
   importJSON(json: string): { count: number }
@@ -140,6 +157,39 @@ class SqliteDataAccess implements DataAccess {
 
   removeTodo(id: string): void { this.db.removeTodo(id); this.notify() }
   toggleTodo(id: string): void { this.db.toggleTodo(id); this.notify() }
+
+  // --- AI 会话线程 ---
+
+  /** 获取全部线程（含 tombstone，供同步合并使用） */
+  getAiThreads(): AiThread[] {
+    return this.db.getAllAiThreads().map(rowToAiThread)
+  }
+
+  getAiThreadById(id: string): AiThread | undefined {
+    const row = this.db.getAllAiThreads().find(r => r.id === id)
+    return row ? rowToAiThread(row) : undefined
+  }
+
+  saveAiThread(thread: AiThread): void {
+    this.db.upsertAiThread({
+      id: thread.id, title: thread.title, focusTodoId: thread.focusTodoId ?? null,
+      summary: thread.summary, summarizedCount: thread.summarizedCount,
+      messagesJson: thread.messagesJson, deleted: thread.deleted,
+      createdAt: thread.createdAt, updatedAt: thread.updatedAt,
+    })
+    this.notify()
+  }
+
+  /** 整体替换所有线程（同步合并后写回） */
+  replaceAllAiThreads(threads: AiThread[]): void {
+    this.db.replaceAllAiThreads(threads.map(t => ({
+      id: t.id, title: t.title, focusTodoId: t.focusTodoId ?? null,
+      summary: t.summary, summarizedCount: t.summarizedCount,
+      messagesJson: t.messagesJson, deleted: t.deleted,
+      createdAt: t.createdAt, updatedAt: t.updatedAt,
+    })))
+    this.notify()
+  }
 
   async save(): Promise<void> {
     try { await this.saveToStorage(this.db.export()) }
@@ -267,6 +317,18 @@ function rowToTodo(row: any): Todo {
     sourceId: row.source_id ?? undefined,
     deleted: row.deleted === 1,
     kind: row.kind === 'NOTE' ? 'NOTE' : 'TASK',
+  }
+}
+
+function rowToAiThread(row: any): AiThread {
+  return {
+    id: row.id, title: row.title,
+    focusTodoId: row.focus_todo_id ?? undefined,
+    summary: row.summary ?? '',
+    summarizedCount: Number(row.summarized_count) || 0,
+    messagesJson: row.messages ?? '[]',
+    deleted: row.deleted === 1,
+    createdAt: row.created_at, updatedAt: row.updated_at,
   }
 }
 

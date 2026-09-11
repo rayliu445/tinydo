@@ -51,6 +51,31 @@ export interface TodoInput {
   kind?: 'TASK' | 'NOTE' // 笔记类型，默认 TASK
 }
 
+/** 小柴会话线程行（messages 为 ChatBubble[] 的 JSON 序列化，数据层不感知聊天结构） */
+export interface AiThreadRow {
+  id: string
+  title: string
+  focus_todo_id: string | null
+  summary: string
+  summarized_count: number
+  messages: string
+  deleted: number // 0 or 1，软删除标记（tombstone，用于同步删除传播）
+  created_at: string
+  updated_at: string
+}
+
+export interface AiThreadInput {
+  id: string
+  title: string
+  focusTodoId?: string | null
+  summary?: string
+  summarizedCount?: number
+  messagesJson: string
+  deleted?: boolean
+  createdAt: string
+  updatedAt: string
+}
+
 // ============ Schema ============
 
 const SCHEMA = `
@@ -83,6 +108,20 @@ CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS ai_threads (
+  id               TEXT PRIMARY KEY,
+  title            TEXT NOT NULL DEFAULT '',
+  focus_todo_id    TEXT,
+  summary          TEXT NOT NULL DEFAULT '',
+  summarized_count INTEGER NOT NULL DEFAULT 0,
+  messages         TEXT NOT NULL DEFAULT '[]',
+  deleted          INTEGER NOT NULL DEFAULT 0,
+  created_at       TEXT NOT NULL,
+  updated_at       TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_ai_threads_updated ON ai_threads(updated_at);
 `
 
 // ============ 数据库管理器 ============
@@ -360,6 +399,49 @@ export class TodoDatabase {
       }
     }
     return { total: 0, completed: 0, pending: 0 }
+  }
+
+  // ============ AI 会话线程 ============
+
+  /** 获取所有会话线程（含 tombstone，供同步合并使用） */
+  getAllAiThreads(): AiThreadRow[] {
+    if (!this.db) return []
+    const stmt = this.db.prepare('SELECT * FROM ai_threads ORDER BY updated_at DESC')
+    const rows: AiThreadRow[] = []
+    while (stmt.step()) {
+      rows.push(stmt.getAsObject() as unknown as AiThreadRow)
+    }
+    stmt.free()
+    return rows
+  }
+
+  /** 新增或覆盖线程（updatedAt 由调用方维护，用于多端 LWW 合并） */
+  upsertAiThread(input: AiThreadInput): AiThreadRow {
+    if (!this.db) throw new Error('Database not initialized')
+    const row: AiThreadRow = {
+      id: input.id,
+      title: input.title,
+      focus_todo_id: input.focusTodoId ?? null,
+      summary: input.summary ?? '',
+      summarized_count: input.summarizedCount ?? 0,
+      messages: input.messagesJson,
+      deleted: input.deleted ? 1 : 0,
+      created_at: input.createdAt,
+      updated_at: input.updatedAt,
+    }
+    this.db.run(
+      `INSERT OR REPLACE INTO ai_threads (id, title, focus_todo_id, summary, summarized_count, messages, deleted, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [row.id, row.title, row.focus_todo_id, row.summary, row.summarized_count, row.messages, row.deleted, row.created_at, row.updated_at],
+    )
+    return row
+  }
+
+  /** 整体替换所有线程（同步合并后写回，保留各自 updatedAt） */
+  replaceAllAiThreads(inputs: AiThreadInput[]): void {
+    if (!this.db) throw new Error('Database not initialized')
+    this.db.run('DELETE FROM ai_threads')
+    for (const input of inputs) this.upsertAiThread(input)
   }
 
   // ============ 设置 ============

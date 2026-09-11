@@ -169,6 +169,152 @@
         </div>
       </div>
 
+      <!-- ===== AI 助手 ===== -->
+      <div v-if="activeTab === 'ai'" class="p-6 max-w-2xl space-y-4">
+        <div class="rounded-xl p-5" :style="{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }">
+          <div class="flex items-start gap-4">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              :style="{ backgroundColor: 'var(--color-accent-light)' }">
+              <AppIcon name="ai" :size="20" color="var(--color-accent)" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">小柴</div>
+              <div class="text-xs mt-0.5" :style="{ color: 'var(--text-secondary)' }">
+                畏难或不知道怎么拆任务时，找小柴聊聊。小柴会鼓励你，并在你同意后把大任务拆小写进清单。兼容 OpenAI 接口格式，API Key 仅保存在本机。
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI 配置卡片 -->
+        <div class="rounded-xl overflow-hidden"
+          :style="{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }">
+          <div class="px-5 py-4 space-y-3"
+            :style="{ backgroundColor: 'var(--bg-app)' }">
+            <div v-for="field in aiFields" :key="field.key" class="space-y-1">
+              <label class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">{{ field.label }}</label>
+              <input
+                v-model="aiForm[field.key]"
+                :type="field.type || 'text'"
+                :placeholder="field.placeholder"
+                class="w-full px-3 py-2 text-sm rounded-lg border outline-none transition-all duration-150"
+                :style="{
+                  backgroundColor: 'var(--bg-card)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                }"
+                @change="saveAi"
+              />
+              <div v-if="field.hint" class="text-xs" :style="{ color: 'var(--text-tertiary)' }">{{ field.hint }}</div>
+            </div>
+
+            <div class="space-y-1">
+              <label class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">自定义提示词（可选）</label>
+              <textarea
+                v-model="aiForm.customPrompt"
+                rows="4"
+                placeholder="例如：语气更轻松一点，多用比喻；重点关注我的deadline焦虑…"
+                class="w-full px-3 py-2 text-sm rounded-lg border outline-none transition-all duration-150 resize-y"
+                :style="{
+                  backgroundColor: 'var(--bg-card)',
+                  borderColor: 'var(--border-color)',
+                  color: 'var(--text-primary)',
+                }"
+                @change="saveAi"
+              ></textarea>
+              <div class="text-xs" :style="{ color: 'var(--text-tertiary)' }">
+                追加在默认人设之后生效，可调整语气与关注点
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2 pt-2">
+              <button class="px-4 py-2 text-sm rounded-lg transition-all duration-150"
+                :style="{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }"
+                :disabled="isTestingAi"
+                @click="handleTestAi">
+                <span v-if="isTestingAi">测试中...</span>
+                <span v-else>测试连接</span>
+              </button>
+            </div>
+            <div v-if="aiTestResult" class="text-xs mt-1"
+              :style="{ color: aiTestResult.ok ? '#22c55e' : '#ef4444' }">
+              {{ aiTestResult.ok ? '✓ ' : '✗ ' }}{{ aiTestResult.message }}
+            </div>
+          </div>
+        </div>
+        <!-- 朗读（TTS）卡片 -->
+        <div class="rounded-xl overflow-hidden"
+          :style="{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }">
+          <div class="px-5 py-4 space-y-3"
+            :style="{ backgroundColor: 'var(--bg-app)' }">
+            <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">朗读</div>
+            <div class="text-xs" :style="{ color: 'var(--text-secondary)' }">
+              让小柴把回复读给你听。系统语音离线可用；Edge TTS 音质更自然但需要网络，失败会自动降级为系统语音。
+            </div>
+
+            <label class="flex items-center gap-2 text-sm cursor-pointer" :style="{ color: 'var(--text-secondary)' }">
+              <input v-model="ttsForm.autoSpeak" type="checkbox" class="checkbox-tick" @change="saveTts" />
+              AI 回复后自动朗读
+            </label>
+
+            <div class="space-y-1">
+              <label class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">朗读引擎</label>
+              <div class="flex gap-2">
+                <button
+                  v-for="eng in ttsEngineOptions" :key="eng.value"
+                  class="flex-1 py-2 text-xs rounded-lg transition-all duration-150 font-medium"
+                  :style="ttsEngineBtnStyle(eng.value)"
+                  @click="ttsForm.engine = eng.value; saveTts()"
+                >
+                  {{ eng.label }}
+                </button>
+              </div>
+              <div class="text-xs" :style="{ color: 'var(--text-tertiary)' }">{{ activeEngineHint }}</div>
+            </div>
+
+            <div v-if="ttsForm.engine === 'edge'" class="space-y-1">
+              <label class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">声音</label>
+              <select
+                v-model="ttsForm.edgeVoice"
+                class="w-full px-3 py-2 text-sm rounded-lg border outline-none transition-all duration-150"
+                :style="{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }"
+                @change="saveTts"
+              >
+                <option v-for="v in edgeVoices" :key="v.value" :value="v.value">{{ v.label }}</option>
+              </select>
+            </div>
+
+            <div class="space-y-1">
+              <label class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">
+                语速（{{ ttsForm.rate.toFixed(1) }}×）
+              </label>
+              <input
+                v-model.number="ttsForm.rate"
+                type="range" min="0.5" max="2" step="0.1"
+                class="w-full"
+                @change="saveTts"
+              />
+            </div>
+
+            <div class="flex items-center gap-2 pt-1">
+              <button class="px-4 py-2 text-sm rounded-lg transition-all duration-150"
+                :style="{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }"
+                :disabled="ttsState.speaking"
+                @click="handleTestSpeak">
+                <span v-if="ttsState.speaking">朗读中…（点击无效）</span>
+                <span v-else>试听</span>
+              </button>
+              <button v-if="ttsState.speaking"
+                class="px-4 py-2 text-sm rounded-lg transition-all duration-150"
+                :style="{ backgroundColor: 'var(--bg-hover)', color: '#ef4444' }"
+                @click="stopSpeaking">
+                停止
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- ===== 主题 ===== -->
       <div v-if="activeTab === 'theme'" class="p-6 max-w-2xl space-y-3">
         <div class="rounded-xl p-5"
@@ -331,16 +477,19 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, reactive } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { themeMode as tm, setThemeMode } from '../stores/theme'
 import AppIcon from '../components/icons/AppIcon.vue'
 import { Capacitor } from '@capacitor/core'
+import { testAiConnection } from '../services/ai/ai-client'
+import { EDGE_VOICES } from '../services/tts/edge-tts'
+import { speak, stopSpeaking, ttsState } from '../services/tts'
 
 const router = useRouter()
 const store = useSettingsStore()
-const activeTab = ref<'storage' | 'sync' | 'theme' | 'about'>('storage')
+const activeTab = ref<'storage' | 'sync' | 'ai' | 'theme' | 'about'>('storage')
 
 // 版本号：由 vite.config.js 注入（读取自 package.json，随版本发布自动更新）
 const appVersion = __APP_VERSION__
@@ -418,6 +567,7 @@ function handleInstallUpdate() {
 const tabs = [
   { id: 'storage' as const, label: '存储', icon: 'storage' },
   { id: 'sync' as const, label: '同步', icon: 'sync' },
+  { id: 'ai' as const, label: 'AI 助手', icon: 'ai' },
   { id: 'theme' as const, label: '主题', icon: 'palette' },
   { id: 'about' as const, label: '关于', icon: 'about' },
 ]
@@ -473,6 +623,66 @@ async function handleTestConnection() {
   testResult.value = null
   testResult.value = await store.testKodoConnection()
   isTesting.value = false
+}
+
+// ============ AI 助手 ============
+
+const aiFields = [
+  { key: 'baseUrl' as const, label: 'Base URL', placeholder: 'https://api.deepseek.com/v1', hint: 'OpenAI 兼容接口地址，填到 /v1 这一层（DeepSeek / GLM / Kimi / Qwen / OpenAI 等均可）' },
+  { key: 'apiKey' as const, label: 'API Key', placeholder: 'sk-...', type: 'password' },
+  { key: 'model' as const, label: '模型名', placeholder: 'deepseek-chat', hint: '如 deepseek-chat、glm-4-flash、moonshot-v1-8k、gpt-4o-mini' },
+]
+
+// 本地编辑副本（失焦/变更时提交到 store 持久化）
+const aiForm = reactive({ ...store.settings.ai })
+function saveAi() {
+  store.updateAiSettings({ ...aiForm })
+}
+
+const isTestingAi = ref(false)
+const aiTestResult = ref<{ ok: boolean; message: string } | null>(null)
+async function handleTestAi() {
+  saveAi()
+  isTestingAi.value = true
+  aiTestResult.value = null
+  aiTestResult.value = await testAiConnection(store.settings.ai)
+  isTestingAi.value = false
+}
+
+// ============ 朗读（TTS） ============
+
+const edgeVoices = EDGE_VOICES
+const ttsEngineOptions = [
+  { value: 'edge' as const, label: 'Edge TTS（默认）' },
+  { value: 'system' as const, label: '系统语音（兜底）' },
+]
+const activeEngineHint = computed(() =>
+  ttsForm.engine === 'edge'
+    ? '微软云端神经网络语音，音质自然，需要联网；接口不可用时自动降级为系统语音'
+    : '设备内置语音，离线可用，但声音较机械，仅建议离线场景使用',
+)
+
+// 本地编辑副本（变更时提交到 store 持久化）
+const ttsForm = reactive({ ...store.settings.tts })
+function saveTts() {
+  store.updateTtsSettings({ ...ttsForm })
+}
+
+function ttsEngineBtnStyle(value: string) {
+  const active = ttsForm.engine === value
+  return {
+    backgroundColor: active ? 'var(--color-accent-light)' : 'var(--bg-hover)',
+    color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+    border: '1px solid ' + (active ? 'var(--border-color)' : 'transparent'),
+  }
+}
+
+function handleTestSpeak() {
+  saveTts()
+  const tts = store.settings.tts
+  speak('你好呀，我是 TinyDo 的小柴，很高兴陪你一起把任务变小、变轻松。', {
+    engine: tts.engine, voice: tts.edgeVoice, rate: tts.rate,
+  }).catch(err => console.warn('[TTS] 试听失败:', err))
 }
 
 async function exportData() {

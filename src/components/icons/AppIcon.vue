@@ -322,6 +322,44 @@ const icons: Record<string, IconDef> = {
       'M3 4v5h5',
     ],
   },
+
+  // 🐶 小柴 - 圆润对话气泡 + 三个点
+  ai: {
+    viewBox: '0 0 24 24',
+    paths: [
+      'M7.9 20A9 9 0 1 0 4 16.1L2 22z',
+      'M8 12h.01',
+      'M12 12h.01',
+      'M16 12h.01',
+    ],
+  },
+
+  // ✈️ 发送 - 纸飞机
+  send: {
+    viewBox: '0 0 24 24',
+    paths: [
+      'M21 3L10 14',
+      'M21 3l-7 19-4-8-8-4z',
+    ],
+  },
+
+  // 🔊 朗读 - 喇叭 + 声波
+  volume: {
+    viewBox: '0 0 24 24',
+    paths: [
+      'M11 5L6 9H3v6h3l5 4V5z',
+      'M15.5 8.5a5 5 0 0 1 0 7',
+      'M18.5 6a9 9 0 0 1 0 12',
+    ],
+  },
+
+  // ⏹ 停止 - 圆角方块
+  stop: {
+    viewBox: '0 0 24 24',
+    paths: [
+      'M7 7h10v10H7z',
+    ],
+  },
 }
 
 const icon = computed(() => {

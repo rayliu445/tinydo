@@ -15,3 +15,5 @@ release/
 
 # CSV test data — 仅保留脱敏示例数据，不提交真实个人信息
 Dida_test.csv
+# ZCode 会话产物
+.zcode/

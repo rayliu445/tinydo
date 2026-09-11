@@ -201,17 +201,28 @@
       >
         删除
       </button>
-      <button
-        class="px-5 py-2 text-sm rounded-lg transition-all duration-150"
-        :style="{
-          backgroundColor: 'var(--color-accent-light)',
-          color: 'var(--text-primary)',
-          fontWeight: 500,
-        }"
-        @click="confirmEdit"
-      >
-        保存
-      </button>
+      <div class="flex gap-2">
+        <button
+          class="px-3 py-2 text-sm rounded-lg transition-all duration-150 flex items-center gap-1.5"
+          :style="{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }"
+          title="感觉难？让小柴帮你拆解这个任务"
+          @click="openCoach"
+        >
+          <AppIcon name="ai" :size="15" color="var(--text-secondary)" />
+          问小柴
+        </button>
+        <button
+          class="px-5 py-2 text-sm rounded-lg transition-all duration-150"
+          :style="{
+            backgroundColor: 'var(--color-accent-light)',
+            color: 'var(--text-primary)',
+            fontWeight: 500,
+          }"
+          @click="confirmEdit"
+        >
+          保存
+        </button>
+      </div>
     </div>
   </div>
 </template>
@@ -219,10 +230,12 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useTodoStore } from '../stores/todo'
+import { useAiChatStore } from '../stores/ai-chat'
 import { storeToRefs } from 'pinia'
 import AppIcon from './icons/AppIcon.vue'
 
 const todoStore = useTodoStore()
+const aiChat = useAiChatStore()
 const { todos, selectedTodoId } = storeToRefs(todoStore)
 
 // 窄屏浮层模式：由父组件传入（宽屏为右侧栏，窄屏全屏覆盖）
@@ -355,6 +368,13 @@ async function deleteSubTask(st: any) {
 function openSub(st: any) {
   // 面板内切换到子任务详情
   overrideId.value = st.id
+}
+
+// 找小柴：携带当前任务打开聊天浮层（畏难/拆任务求助）
+function openCoach() {
+  const t = target.value
+  if (!t) return
+  aiChat.open(t.id)
 }
 
 function formatFullDate(dateStr: string) {

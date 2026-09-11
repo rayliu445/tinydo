@@ -10,7 +10,7 @@
 
 import type { CloudProvider, SyncConfig, SyncState, SyncResult } from './providers/types'
 import { DEFAULT_SYNC_CONFIG } from './providers/types'
-import { getDataAccess, type Todo } from './data-access'
+import { getDataAccess, type Todo, type AiThread } from './data-access'
 import { fromJS, loadDoc, saveDoc, getDocSnapshot } from './crdt-doc'
 
 export class SyncEngine {
@@ -29,8 +29,9 @@ export class SyncEngine {
   // 防抖：500ms 内多次写入只触发一次
   private pendingWrite = false
   private readonly WRITE_DEBOUNCE_MS = 500
-  // 云文件路径
+  // 云文件路径：todos 用 CRDT 文档，AI 会话线程用 JSON（线程级 LWW + tombstone）
   private readonly CLOUD_FILE = 'data.automerge'
+  private readonly AI_THREADS_FILE = 'ai-threads.json'
 
   constructor(config?: Partial<SyncConfig>) {
     this.config = { ...DEFAULT_SYNC_CONFIG, ...config }
@@ -221,6 +222,9 @@ export class SyncEngine {
         await this.provider.write(this.CLOUD_FILE, docBytes)
       }
 
+      // 6. AI 会话线程同步（独立云文件；失败不影响 todo 同步结果）
+      await this.syncAiThreads()
+
       // 更新状态
       this.state.status = 'idle'
       this.state.lastSyncTime = new Date().toISOString()
@@ -331,6 +335,45 @@ export class SyncEngine {
 
   // ============ 私有方法 ============
 
+  /**
+   * AI 会话线程同步：独立云文件 ai-threads.json，线程级 LWW + tombstone。
+   * 失败只记日志并跳过，不影响 todo 同步，也不得用本地覆盖云端。
+   */
+  private async syncAiThreads(): Promise<void> {
+    if (!this.provider) return
+    const dataAccess = getDataAccess()
+    const localAll = dataAccess.getAiThreads() // 含 tombstone
+
+    let cloudThreads: AiThread[] = []
+    let cloudRaw: string | null = null
+    try {
+      const data = await this.provider.read(this.AI_THREADS_FILE)
+      if (data) {
+        cloudRaw = new TextDecoder().decode(data)
+        const parsed = JSON.parse(cloudRaw)
+        cloudThreads = Array.isArray(parsed?.threads) ? parsed.threads : []
+      }
+    } catch (err) {
+      console.warn('[SyncEngine] ai-threads 云端读取失败，跳过本次线程同步（防止覆盖云端）:', err)
+      return
+    }
+
+    // 线程级 LWW：updatedAt 更晚者胜，各自独有的都保留（含 tombstone）
+    const merged = mergeTodosByUpdatedAt(localAll, cloudThreads)
+    if (!sameAiThreads(merged, localAll)) {
+      dataAccess.replaceAllAiThreads(merged)
+    }
+
+    // tombstone 瘦身：已删除线程不再携带消息体，控制云端文件大小
+    const payload = merged.map(t => (t.deleted ? { ...t, messagesJson: '[]' } : t))
+    const nextJson = JSON.stringify({ version: 1, threads: payload })
+    const nextBytes = new TextEncoder().encode(nextJson)
+    const cloudBytes = cloudRaw ? new TextEncoder().encode(cloudRaw) : null
+    if (!cloudBytes || !sameBytes(nextBytes, cloudBytes)) {
+      await this.provider.write(this.AI_THREADS_FILE, nextBytes)
+    }
+  }
+
   private async initialSync(): Promise<void> {
     if (!this.provider) return
 
@@ -359,6 +402,8 @@ export class SyncEngine {
         dataAccess.replaceAll(mergedAll)
         await dataAccess.save()
       }
+      // AI 会话线程：首次拉取/合并（失败不影响任务数据）
+      await this.syncAiThreads()
       this.state.lastSyncDetail = {
         time: new Date().toISOString(),
         cloudBytes,
@@ -441,6 +486,17 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
     if (a[i] !== b[i]) return false
   }
   return true
+}
+
+/** 判断两组会话线程内容是否一致（忽略顺序，按 id 排序后比较） */
+function sameAiThreads(a: AiThread[], b: AiThread[]): boolean {
+  if (a.length !== b.length) return false
+  const sig = (list: AiThread[]) =>
+    list.map(t => [t.id, JSON.stringify(t)] as const)
+      .sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : 0))
+      .map(([, s]) => s)
+      .join('\u0001')
+  return sig(a) === sig(b)
 }
 
 /**

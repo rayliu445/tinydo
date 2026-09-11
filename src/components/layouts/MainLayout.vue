@@ -117,6 +117,15 @@
           >
             <AppIcon name="search" :size="20" :color="isSearchView ? 'var(--color-accent)' : 'var(--text-secondary)'" />
           </button>
+          <!-- 小柴：打开聊天浮层（畏难/拆任务求助） -->
+          <button
+            class="w-10 h-10 flex items-center justify-center rounded-lg cursor-pointer transition-all duration-150"
+            :style="{ backgroundColor: aiChat.isOpen ? 'var(--color-accent-light)' : 'transparent' }"
+            title="小柴"
+            @click="aiChat.isOpen ? aiChat.close() : aiChat.open()"
+          >
+            <AppIcon name="ai" :size="20" :color="aiChat.isOpen ? 'var(--color-accent)' : 'var(--text-secondary)'" />
+          </button>
 
           <!-- 中列入口（仅窄屏显示在图标栏：今天/收集箱/笔记，移动端可切换视图） -->
           <template v-if="windowWidth < 1000">
@@ -206,6 +215,9 @@
 
     <!-- 全局右键快捷菜单 -->
     <ContextMenu />
+
+    <!-- 小柴聊天浮层 -->
+    <AiChatPanel />
   </div>
 </template>
 
@@ -217,6 +229,10 @@ import { storeToRefs } from 'pinia'
 import AppIcon from '../icons/AppIcon.vue'
 import TaskDetailPanel from '../TaskDetailPanel.vue'
 import ContextMenu from '../ContextMenu.vue'
+import AiChatPanel from '../AiChatPanel.vue'
+import { useAiChatStore } from '../../stores/ai-chat'
+
+const aiChat = useAiChatStore()
 
 const route = useRoute()
 const router = useRouter()
