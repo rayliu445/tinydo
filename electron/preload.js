@@ -28,4 +28,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdate: () => ipcRenderer.invoke('check-for-update'),
   downloadAndInstall: (url) => ipcRenderer.invoke('download-and-install', url),
   onUpdateProgress: (cb) => ipcRenderer.on('update-progress', (_e, p) => cb(p)),
+
+  // 小柴朗读：Edge TTS 合成（主进程带特征头直连，返回 MP3 base64）
+  ttsEdgeSynthesize: (payload) => ipcRenderer.invoke('tts-edge-synthesize', payload),
 })

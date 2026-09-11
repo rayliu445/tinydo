@@ -10,10 +10,9 @@
 
 import { reactive } from 'vue'
 import { EDGE_TTS_MAX_CHARS, edgeSynthesize, splitTextForTts } from './edge-tts'
-import { azureSynthesize } from './azure-tts'
 import type { TtsSettings } from '../../stores/settings'
 
-export type TtsEngine = 'system' | 'edge' | 'azure'
+export type TtsEngine = 'system' | 'edge'
 
 export interface TtsConfig {
   engine: TtsEngine
@@ -21,8 +20,8 @@ export interface TtsConfig {
   voice: string
   /** 语速，1 = 原速，范围 0.5 ~ 2 */
   rate: number
-  /** Azure 官方引擎参数（engine = 'azure' 时必须） */
-  azure?: { region: string; key: string }
+  /** 系统语音 voiceURI（engine = 'system' 时优先使用）；空 = 自动匹配中文 */
+  systemVoiceURI?: string
 }
 
 /**
@@ -39,7 +38,7 @@ export function speakWithSettings(
       engine: tts.engine,
       voice: tts.edgeVoice,
       rate: tts.rate,
-      azure: { region: tts.azureRegion, key: tts.azureKey },
+      systemVoiceURI: tts.systemVoiceURI,
     },
     opts,
   )
@@ -101,21 +100,8 @@ export async function speak(
         ttsState.engineUsed = 'system' // 降级决策立即标记，朗读中即可在设置页看到
         console.warn('[TTS] Edge TTS 失败，自动降级为系统语音:', reason)
       }
-    } else if (cfg.engine === 'azure') {
-      try {
-        await azureSpeakWithFallbackGuard(clean, cfg, gen)
-        ttsState.engineUsed = 'azure'
-        ttsState.lastFallbackReason = null
-        return 'azure'
-      } catch (err) {
-        if (gen !== generation) return ttsState.engineUsed ?? 'system' // 已被新请求打断
-        const reason = err instanceof Error ? err.message : String(err)
-        ttsState.lastFallbackReason = reason
-        ttsState.engineUsed = 'system'
-        console.warn('[TTS] Azure TTS 失败，自动降级为系统语音:', reason)
-      }
     }
-    await systemSpeak(clean, cfg.rate, gen)
+    await systemSpeak(clean, cfg.rate, gen, cfg.systemVoiceURI)
     ttsState.engineUsed = 'system'
     return 'system'
   } finally {
@@ -132,22 +118,6 @@ async function edgeSpeakWithFallbackGuard(text: string, cfg: TtsConfig, gen: num
   for (const chunk of chunks) {
     if (gen !== generation) return // 被打断
     const blob = await edgeSynthesize(chunk, cfg.voice, cfg.rate)
-    if (gen !== generation) return
-    await playAudioBlob(blob)
-  }
-}
-
-/** Azure 官方引擎：分段合成 + 顺序播放；任一段失败抛错（触发整体降级） */
-async function azureSpeakWithFallbackGuard(text: string, cfg: TtsConfig, gen: number): Promise<void> {
-  const chunks = splitTextForTts(text, EDGE_TTS_MAX_CHARS)
-  for (const chunk of chunks) {
-    if (gen !== generation) return
-    const blob = await azureSynthesize(chunk, {
-      region: cfg.azure?.region ?? '',
-      key: cfg.azure?.key ?? '',
-      voice: cfg.voice,
-      rate: cfg.rate,
-    })
     if (gen !== generation) return
     await playAudioBlob(blob)
   }
@@ -171,8 +141,8 @@ function playAudioBlob(blob: Blob): Promise<void> {
   })
 }
 
-/** 系统引擎：speechSynthesis，自动匹配中文语音 */
-function systemSpeak(text: string, rate: number, gen: number): Promise<void> {
+/** 系统引擎：speechSynthesis，优先使用用户选择的 voiceURI，否则自动匹配中文语音 */
+function systemSpeak(text: string, rate: number, gen: number, voiceURI?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     try {
       if (typeof speechSynthesis === 'undefined') {
@@ -182,7 +152,7 @@ function systemSpeak(text: string, rate: number, gen: number): Promise<void> {
       const utter = new SpeechSynthesisUtterance(text)
       utter.rate = Math.min(2, Math.max(0.5, rate))
       utter.lang = 'zh-CN'
-      const zhVoice = pickChineseVoice()
+      const zhVoice = (voiceURI && pickVoiceByURI(voiceURI)) || pickChineseVoice()
       if (zhVoice) utter.voice = zhVoice
       utter.onend = () => resolve()
       utter.onerror = () => {
@@ -194,6 +164,14 @@ function systemSpeak(text: string, rate: number, gen: number): Promise<void> {
       reject(err instanceof Error ? err : new Error('系统语音合成失败'))
     }
   })
+}
+
+function pickVoiceByURI(uri: string): SpeechSynthesisVoice | null {
+  try {
+    return speechSynthesis.getVoices().find(v => v.voiceURI === uri) ?? null
+  } catch {
+    return null
+  }
 }
 
 function pickChineseVoice(): SpeechSynthesisVoice | null {

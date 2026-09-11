@@ -272,7 +272,7 @@
               <div class="text-xs" :style="{ color: 'var(--text-tertiary)' }">{{ activeEngineHint }}</div>
             </div>
 
-            <div v-if="ttsForm.engine !== 'system'" class="space-y-1">
+            <div v-if="ttsForm.engine === 'edge'" class="space-y-1">
               <label class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">声音</label>
               <select
                 v-model="ttsForm.edgeVoice"
@@ -284,30 +284,22 @@
               </select>
             </div>
 
-            <div v-if="ttsForm.engine === 'azure'" class="space-y-1">
-              <label class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">Azure 区域</label>
+            <div v-if="ttsForm.engine === 'system'" class="space-y-1">
+              <label class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">声音（{{ systemVoices.length }} 个可选）</label>
               <select
-                v-model="ttsForm.azureRegion"
+                v-model="ttsForm.systemVoiceURI"
                 class="w-full px-3 py-2 text-sm rounded-lg border outline-none transition-all duration-150"
                 :style="{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }"
                 @change="saveTts"
               >
-                <option v-for="r in azureRegions" :key="r.value" :value="r.value">{{ r.label }}</option>
+                <option value="">自动匹配中文</option>
+                <option v-for="v in systemVoices" :key="v.voiceURI" :value="v.voiceURI">
+                  {{ v.name }}{{ v.localService ? '' : '（在线）' }}
+                </option>
               </select>
-              <div class="text-xs" :style="{ color: 'var(--text-tertiary)' }">与创建 Speech 资源时选择的区域一致</div>
-            </div>
-
-            <div v-if="ttsForm.engine === 'azure'" class="space-y-1">
-              <label class="text-xs font-medium" :style="{ color: 'var(--text-secondary)' }">Azure 密钥（仅存本机）</label>
-              <input
-                v-model="ttsForm.azureKey"
-                type="password"
-                placeholder="Azure Speech 资源的 Key"
-                class="w-full px-3 py-2 text-sm rounded-lg border outline-none transition-all duration-150"
-                :style="{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', color: 'var(--text-primary)' }"
-                @change="saveTts"
-              />
-              <div class="text-xs" :style="{ color: 'var(--text-tertiary)' }">Azure 门户 → Speech 服务 → 密钥和终结点；免费层 F0 每月 50 万字符</div>
+              <div class="text-xs" :style="{ color: 'var(--text-tertiary)' }">
+                想要更自然的声音？macOS/iOS 可在「系统设置 → 辅助功能 → 朗读内容 → 声音」免费下载中文增强语音（如「婷婷（增强）」），下载后重新打开应用即可在此选择。
+              </div>
             </div>
 
             <div class="space-y-1">
@@ -339,7 +331,7 @@
             </div>
             <div v-if="ttsState.engineUsed" class="text-xs space-y-0.5">
               <div :style="{ color: ttsState.engineUsed === 'edge' ? '#22c55e' : '#f59e0b' }">
-                上次朗读实际使用：{{ ttsState.engineUsed === 'edge' ? 'Edge TTS（云端语音，音色随设置变化）' : ttsState.engineUsed === 'azure' ? 'Azure 官方接口（云端语音，音色随设置变化）' : '系统语音（声音较机械，与音色设置无关）' }}
+                上次朗读实际使用：{{ ttsState.engineUsed === 'edge' ? '云端语音（音色随设置变化）' : '系统语音（WebView 内置）' }}
               </div>
               <div v-if="ttsState.lastFallbackReason && ttsState.engineUsed === 'system'"
                 :style="{ color: 'var(--text-tertiary)' }">
@@ -520,7 +512,6 @@ import AppIcon from '../components/icons/AppIcon.vue'
 import { Capacitor } from '@capacitor/core'
 import { testAiConnection } from '../services/ai/ai-client'
 import { EDGE_VOICES } from '../services/tts/edge-tts'
-import { AZURE_REGIONS } from '../services/tts/azure-tts'
 import { speakWithSettings, stopSpeaking, ttsState } from '../services/tts'
 
 const router = useRouter()
@@ -688,18 +679,29 @@ async function handleTestAi() {
 // ============ 朗读（TTS） ============
 
 const edgeVoices = EDGE_VOICES
-const azureRegions = AZURE_REGIONS
+
+// 系统语音列表（speechSynthesis 异步加载，监听 voiceschanged）
+const systemVoices = ref<{ voiceURI: string; name: string; localService: boolean }[]>([])
+function refreshSystemVoices() {
+  try {
+    const list = window.speechSynthesis?.getVoices?.() ?? []
+    systemVoices.value = list
+      .filter(v => v.lang?.startsWith('zh'))
+      .map(v => ({ voiceURI: v.voiceURI, name: v.name, localService: v.localService }))
+  } catch { /* ignore */ }
+}
+if (typeof window !== 'undefined' && window.speechSynthesis) {
+  refreshSystemVoices()
+  window.speechSynthesis.onvoiceschanged = refreshSystemVoices
+}
 const ttsEngineOptions = [
-  { value: 'edge' as const, label: 'Edge TTS（免 Key）' },
-  { value: 'azure' as const, label: 'Azure 官方（稳定）' },
-  { value: 'system' as const, label: '系统语音（兜底）' },
+  { value: 'edge' as const, label: '云端语音（推荐）' },
+  { value: 'system' as const, label: '系统语音' },
 ]
 const activeEngineHint = computed(() =>
   ttsForm.engine === 'edge'
-    ? '微软云端神经网络语音，免 Key，音质自然。Web 开发模式经本地代理稳定可用；App 内直连可能被微软风控拒绝，被拒时自动降级系统语音（追求稳定可选 Azure 官方）'
-    : ttsForm.engine === 'azure'
-      ? '微软官方接口，与 Edge 同一批音色，稳定不受限流影响；免费层每月 50 万字符，需注册 Azure 创建语音服务拿 Key'
-      : '设备内置语音，离线可用，但声音较机械，仅建议离线场景使用',
+    ? '微软云端神经网络语音（晓晓/云健等），免 Key 音质自然；不可用时自动降级为系统语音'
+    : 'WebView/系统内置语音，离线可用；下载系统「增强语音」并在此选择后效果更好',
 )
 
 // 本地编辑副本（变更时提交到 store 持久化）

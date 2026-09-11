@@ -4,6 +4,7 @@ const fs = require('fs')
 const os = require('os')
 const http = require('http')
 const https = require('https')
+const crypto = require('crypto')
 const { execSync } = require('child_process')
 
 // 允许 file:// 协议加载 ES Module（解决 type="module" + file:// 的 CORS 限制）
@@ -726,3 +727,89 @@ app.on('window-all-closed', function () {
 // 记录应用启动
 info('Application started with log level: ' + currentLogLevel)
 debug('Debug mode enabled')
+
+// ============ 小柴朗读：Edge TTS 合成（主进程直连，自定义全套特征头） ============
+// 浏览器 WS 无法自定义 Origin/UA 等头，直连微软会被风控 403；
+// 主进程用 ws 库带完整特征头（与官方 edge-tts 库一致），桌面端稳定可用。
+
+const TRUSTED_CLIENT_TOKEN = '6A5AA1D4EAFF4E9FB37E23D68491D6F4'
+const EDGE_WS_URL = 'wss://speech.platform.bing.com/consumer/speech/synthesize/readaloud/edge/v1'
+const EDGE_GEC_VERSION = '1-143.0.3650.75'
+
+function edgeGenSecMsGec() {
+  let ticks = Math.floor(Date.now() / 1000) + 11644473600
+  ticks -= ticks % 300
+  return crypto.createHash('sha256').update(ticks + '0000000' + TRUSTED_CLIENT_TOKEN).digest('hex').toUpperCase()
+}
+
+function edgeXmlEscape(s) {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;')
+}
+
+function edgeBuildSsml(voice, text, rate) {
+  const pct = Math.round((Math.min(2, Math.max(0.5, rate)) - 1) * 100)
+  const rateStr = (pct >= 0 ? '+' : '') + pct + '%'
+  return `<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='zh-CN'>` +
+    `<voice name='${edgeXmlEscape(voice)}'><prosody rate='${rateStr}' pitch='+0Hz' volume='+0%'>${edgeXmlEscape(text)}</prosody></voice></speak>`
+}
+
+ipcMain.handle('tts-edge-synthesize', async (_event, payload) => {
+  const { text, voice, rate } = payload || {}
+  if (!text || !voice) throw new Error('参数缺失')
+  const WebSocket = (await import('ws')).default
+  const gec = edgeGenSecMsGec()
+  const connectionId = crypto.randomBytes(16).toString('hex')
+  const url = `${EDGE_WS_URL}?TrustedClientToken=${TRUSTED_CLIENT_TOKEN}` +
+    `&Sec-MS-GEC=${gec}&Sec-MS-GEC-Version=${EDGE_GEC_VERSION}&ConnectionId=${connectionId}`
+
+  return new Promise((resolve, reject) => {
+    const chunks = []
+    let settled = false
+    const done = (err, b64) => {
+      if (settled) return
+      settled = true
+      try { ws.close() } catch (e) { /* ignore */ }
+      clearTimeout(connectTimer)
+      clearTimeout(streamTimer)
+      if (err) reject(new Error(err))
+      else resolve(b64)
+    }
+    const ws = new WebSocket(url, {
+      headers: {
+        'Origin': 'chrome-extension://jdiccldimpdaibmpdkjnbmckianbfold',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36 Edg/143.0.0.0',
+        'Pragma': 'no-cache',
+        'Cache-Control': 'no-cache',
+        'Accept-Encoding': 'gzip, deflate, br, zstd',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+      // permessage-deflate 关闭：微软对异常扩展组合敏感，官方客户端行为最稳
+      perMessageDeflate: false,
+    })
+    const ts = new Date().toISOString()
+    const connectTimer = setTimeout(() => done('Edge TTS 连接超时'), 10000)
+    const streamTimer = setTimeout(() => done('Edge TTS 音频流超时'), 60000)
+
+    ws.on('open', () => {
+      ws.send(`X-Timestamp:${ts}\r\nContent-Type:application/json; charset=utf-8\r\nPath:speech.config\r\n\r\n` +
+        `{"context":{"synthesis":{"audio":{"metadataoptions":{"sentenceBoundaryEnabled":"false","wordBoundaryEnabled":"false"},"outputFormat":"audio-24khz-48kbitrate-mono-mp3"}}}}`)
+      const requestId = crypto.randomBytes(16).toString('hex')
+      ws.send(`X-RequestId:${requestId}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:${ts}\r\nPath:ssml\r\n\r\n${edgeBuildSsml(voice, text, rate || 1)}`)
+    })
+    ws.on('message', (data, isBinary) => {
+      clearTimeout(connectTimer)
+      clearTimeout(streamTimer)
+      streamTimer.setTimeout = streamTimer.setTimeout // noop 保持引用
+      if (isBinary) {
+        const headerLen = data.readUInt16BE(0)
+        if (data.length > headerLen + 2) chunks.push(data.slice(headerLen + 2))
+      } else if (data.toString().includes('Path:turn.end')) {
+        if (chunks.length === 0) done('Edge TTS 未返回音频（接口可能已变更）')
+        else done(null, Buffer.concat(chunks).toString('base64'))
+      }
+    })
+    ws.on('error', (err) => done('Edge TTS 连接失败：' + err.message))
+    ws.on('close', () => { if (!settled) done('Edge TTS 连接被关闭') })
+  })
+})

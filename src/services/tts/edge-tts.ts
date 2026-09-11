@@ -18,10 +18,9 @@ const STREAM_TIMEOUT_MS = 60000
 // ============ 环境分发（与 kodo.ts 同思路） ============
 // 微软按「请求特征」打分（Origin/UA/头完整性），浏览器 WS 无法自定义这些头，
 // 直连常被 403。因此：
-// - Electron / Capacitor 原生：直连官方 wss（原生网络栈无浏览器头限制的部分特征，
-//   仍可能被风控拒绝，失败自动降级系统语音）
+// - Electron：渲染层经 IPC 调主进程（ws 库带完整特征头，稳定可用）
 // - Web dev：走同源 /tts-edge（vite proxy 转发并补全真客户端头，见 vite.config.ts）
-// - Web 生产：/tts-edge 不存在则连接失败，自动降级；可自建反代支持
+// - Capacitor 原生 / Web 生产：直连官方 wss（可能被风控拒绝，失败自动降级系统语音）
 import { Capacitor } from '@capacitor/core'
 
 function isElectronEnv(): boolean {
@@ -31,15 +30,31 @@ function isElectronEnv(): boolean {
   return false
 }
 
-const DIRECT = isElectronEnv() || (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform())
+const IS_ELECTRON = isElectronEnv()
+const DIRECT = IS_ELECTRON || (typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform())
 
 function wsEndpointUrl(query: string): string {
+  if (IS_ELECTRON) {
+    // Electron 渲染层不直连：由 ttsSynthesizeViaElectron 走 IPC（见 edgeSynthesize 内部分支）
+    return '' // 不会走到这里，占位
+  }
   if (DIRECT) {
     return `wss://speech.platform.bing.com${EDGE_TTS_WS_PATH}?${query}`
   }
   // 同源代理：http(s) 页面下用对应 ws(s) scheme 连本机
   const scheme = typeof location !== 'undefined' && location.protocol === 'https:' ? 'wss' : 'ws'
   return `${scheme}://${location.host}/tts-edge?${query}`
+}
+
+/** Electron 主进程合成（IPC）：返回 MP3 Blob */
+async function edgeSynthesizeViaElectron(text: string, voice: string, rate: number): Promise<Blob> {
+  const api = (window as any).electronAPI
+  if (!api?.ttsEdgeSynthesize) throw new Error('Electron 主进程不支持 Edge TTS（请升级桌面版）')
+  const b64: string = await api.ttsEdgeSynthesize({ text, voice, rate })
+  const bin = atob(b64)
+  const bytes = new Uint8Array(bin.length)
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i)
+  return new Blob([bytes], { type: 'audio/mpeg' })
 }
 
 export interface EdgeVoice {
@@ -134,6 +149,14 @@ export function edgeSynthesize(text: string, voice: string, rate = 1): Promise<B
     let ws: WebSocket
     ;(async () => {
       try {
+        // Electron：走主进程 IPC（带完整特征头，最稳）
+        if (IS_ELECTRON) {
+          edgeSynthesizeViaElectron(text, voice, rate).then(
+            (blob) => done(blob),
+            (err) => fail(err instanceof Error ? err.message : String(err)),
+          )
+          return
+        }
         const gec = await genSecMsGec()
         const connectionId = uuidNoDash() // 官方客户端必带 ConnectionId（无横线 UUID），缺失会被风控拒绝
         const url = wsEndpointUrl(
