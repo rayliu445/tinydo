@@ -444,25 +444,34 @@ export const useAiChatStore = defineStore('ai-chat', () => {
       const parsed = parseAiReply(raw, validIds)
       const resolveTitle = (id: string) => todos.find(t => t.id === id)?.title
 
-      messages.value.push({
+      const assistantMsg: ChatBubble = {
         id: genId('msg'),
         role: 'assistant',
-        content: parsed.content || (parsed.actions.length ? '我整理了几条清单调整建议，你确认后就会写入清单：' : '（AI 返回了空回复，请重试）'),
+        content: parsed.content || (parsed.actions.length
+          ? '我已经直接帮你把清单调整好了：'
+          : '（AI 返回了空回复，请重试）'),
         actions: parsed.actions.length ? parsed.actions : undefined,
         actionLabels: parsed.actions.length
           ? parsed.actions.map(a => describeAction(a, resolveTitle))
           : undefined,
-        actionsState: parsed.actions.length ? 'pending' : undefined,
+        // 直接执行：先标记为已应用，避免头像中间态闪出「应用到清单」按钮
+        actionsState: parsed.actions.length ? 'applied' : undefined,
         time: nowTime(),
-      })
+      }
+      messages.value.push(assistantMsg)
       persistActiveThread()
 
       // 自动朗读（设置开启时）；Edge/Azure 失败已在 speak 内部降级，静默即可
       const ttsCfg = settingsStore.settings.tts
       if (ttsCfg.autoSpeak && parsed.content) {
-        const msgId = messages.value[messages.value.length - 1].id
-        speakWithSettings(parsed.content, ttsCfg, { messageId: msgId })
+        speakWithSettings(parsed.content, ttsCfg, { messageId: assistantMsg.id })
           .catch(err => console.warn('[AI] 自动朗读失败:', err))
+      }
+
+      // 清单操作直接执行，不再停下来等用户确认（用户不满意可以让小柴再改，或手动删）
+      if (assistantMsg.actions?.length) {
+        const done = await runActions(assistantMsg)
+        finishActions(assistantMsg, done, true)
       }
     } catch (err) {
       messages.value.push({
@@ -478,17 +487,14 @@ export const useAiChatStore = defineStore('ai-chat', () => {
     }
   }
 
-  /** 应用一条建议卡片的全部操作（逐条执行，失败的跳过） */
-  async function applyActions(msgId: string) {
-    const msg = messages.value.find(m => m.id === msgId)
-    if (!msg || !msg.actions || msg.actionsState !== 'pending') return
-
+  /** 执行一条消息携带的全部操作（逐条执行，失败的跳过），返回成功条数 */
+  async function runActions(msg: ChatBubble): Promise<number> {
     const todoStore = useTodoStore()
     const todos = () => todoStore.todos as Todo[]
     const findTodo = (id: string) => todos().find(t => t.id === id)
     let done = 0
 
-    for (const a of msg.actions) {
+    for (const a of msg.actions ?? []) {
       try {
         if (a.type === 'add_todo') {
           const parent = a.parentId ? findTodo(a.parentId) : null
@@ -521,15 +527,29 @@ export const useAiChatStore = defineStore('ai-chat', () => {
         console.error('[AI] 应用建议操作失败:', a, err)
       }
     }
+    return done
+  }
 
+  /** 执行完毕：标记状态 + 追加一条系统回执小字 */
+  function finishActions(msg: ChatBubble, done: number, auto: boolean): void {
     msg.actionsState = 'applied'
     messages.value.push({
       id: genId('msg'),
       role: 'system',
-      content: done > 0 ? `已按建议更新清单（${done} 条）✓` : '没有可执行的操作',
+      content: done > 0
+        ? (auto ? `小柴已直接调整清单（${done} 条）✓` : `已按建议更新清单（${done} 条）✓`)
+        : '没有可执行的操作',
       time: nowTime(),
     })
     persistActiveThread()
+  }
+
+  /** 手动应用一条建议卡片（兼容历史遗留的待确认卡片） */
+  async function applyActions(msgId: string) {
+    const msg = messages.value.find(m => m.id === msgId)
+    if (!msg || !msg.actions || msg.actionsState !== 'pending') return
+    const done = await runActions(msg)
+    finishActions(msg, done, false)
   }
 
   function dismissActions(msgId: string) {

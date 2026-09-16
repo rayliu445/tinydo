@@ -14,6 +14,8 @@
           {{ completedTodos.length }}
         </span>
       </div>
+      <!-- 排序方向切换（新的在前 / 旧的在前） -->
+      <SortOrderToggle />
     </div>
 
     <!-- 已完成任务列表 -->
@@ -104,10 +106,16 @@ import { storeToRefs } from 'pinia'
 import AppIcon from '../components/icons/AppIcon.vue'
 import { showContextMenu, type ContextMenuItem } from '../stores/context-menu'
 import EmptyState from '../components/EmptyState.vue'
+import SortOrderToggle from '../components/SortOrderToggle.vue'
+import { useSettingsStore } from '../stores/settings'
 
 const todoStore = useTodoStore()
+const settingsStore = useSettingsStore()
 const { todos } = storeToRefs(todoStore)
 const { fetchTodos, removeTodo, toggleTodo } = todoStore
+
+// 排序方向（新的在前 / 旧的在前）：与清单页共用同一设置
+const sortOrder = computed(() => settingsStore.settings.ui.sortOrder)
 
 // 子任务折叠（默认折叠，父任务有子任务时才显示折叠按钮）
 const expandedParents = ref<Set<string>>(new Set())
@@ -135,7 +143,7 @@ function applyCollapse<T extends { id: string; parentId?: string }>(sorted: T[])
 
 const completedTodos = computed(() => {
   // 显示所有已完成：任务 + 归档笔记（归档=标记完成，算作完成项）；层级排序：父任务在前，已完成子任务紧跟其后
-  return applyCollapse(sortWithHierarchy(todos.value.filter(todo => todo.completed)))
+  return applyCollapse(sortWithHierarchy(todos.value.filter(todo => todo.completed), sortOrder.value))
 })
 
 // 任务详情（右侧第四列面板，全局共享）

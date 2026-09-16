@@ -229,14 +229,19 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { useTodoStore } from '../stores/todo'
+import { useTodoStore, sortWithHierarchy } from '../stores/todo'
 import { useAiChatStore } from '../stores/ai-chat'
+import { useSettingsStore } from '../stores/settings'
 import { storeToRefs } from 'pinia'
 import AppIcon from './icons/AppIcon.vue'
 
 const todoStore = useTodoStore()
 const aiChat = useAiChatStore()
+const settingsStore = useSettingsStore()
 const { todos, selectedTodoId } = storeToRefs(todoStore)
+
+// 子任务排序方向与清单页共用同一设置
+const sortOrder = computed(() => settingsStore.settings.ui.sortOrder)
 
 // 窄屏浮层模式：由父组件传入（宽屏为右侧栏，窄屏全屏覆盖）
 const props = defineProps<{ overlay?: boolean }>()
@@ -342,7 +347,7 @@ async function deleteFromDetail() {
 const subTasks = computed(() => {
   const t = target.value
   if (!t) return []
-  return todos.value.filter(x => x.parentId === t.id)
+  return sortWithHierarchy(todos.value.filter(x => x.parentId === t.id), sortOrder.value)
 })
 
 async function addSubTask() {

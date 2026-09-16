@@ -17,6 +17,8 @@
           {{ filteredTodos.length }}
         </span>
       </div>
+      <!-- 排序方向切换（新的在前 / 旧的在前） -->
+      <SortOrderToggle />
     </div>
 
     <!-- ===== 搜索框（仅搜索视图，可搜所有已完成/未完成） ===== -->
@@ -287,13 +289,19 @@ import { useTodoStore, sortWithHierarchy, type Todo } from '../stores/todo'
 import { storeToRefs } from 'pinia'
 import AppIcon from '../components/icons/AppIcon.vue'
 import EmptyState from '../components/EmptyState.vue'
+import SortOrderToggle from '../components/SortOrderToggle.vue'
 import { showContextMenu, type ContextMenuItem } from '../stores/context-menu'
+import { useSettingsStore } from '../stores/settings'
 
 const route = useRoute()
 const router = useRouter()
 const todoStore = useTodoStore()
+const settingsStore = useSettingsStore()
 const { todos } = storeToRefs(todoStore)
 const { fetchTodos, removeTodo } = todoStore
+
+// 排序方向（新的在前 / 旧的在前）：顶层与每一级子任务同时生效
+const sortOrder = computed(() => settingsStore.settings.ui.sortOrder)
 
 // ============ 页面标题和过滤器 ============
 const currentView = computed(() => {
@@ -415,7 +423,7 @@ const filteredTodos = computed(() => {
   if (currentView.value === 'search') {
     const query = searchQuery.value.toLowerCase().trim()
     if (!query) return []
-    return applyCollapse(sortWithHierarchy(todos.value.filter(t => t.title.toLowerCase().includes(query))))
+    return applyCollapse(sortWithHierarchy(todos.value.filter(t => t.title.toLowerCase().includes(query)), sortOrder.value))
   }
 
   // 其他视图按视图过滤（不受搜索词影响）；笔记（kind=NOTE）不进任务列表
@@ -464,7 +472,7 @@ const filteredTodos = computed(() => {
   }
 
   // 层级排序 + 折叠过滤：父任务在前，子任务紧跟其后（未展开时隐藏）
-  return applyCollapse(sortWithHierarchy(list))
+  return applyCollapse(sortWithHierarchy(list, sortOrder.value))
 })
 
 // ============ 今天/最近7天视图分组（未完成 / 已完成） ============
@@ -491,8 +499,8 @@ const displayRows = computed<DisplayRow[]>(() => {
   if (!isGrouped) {
     return filteredTodos.value.map(t => ({ kind: 'todo' as const, todo: t }))
   }
-  const pending = applyCollapse(sortWithHierarchy(filteredTodos.value.filter(t => !t.completed)))
-  const completed = applyCollapse(sortWithHierarchy(filteredTodos.value.filter(t => t.completed)))
+  const pending = applyCollapse(sortWithHierarchy(filteredTodos.value.filter(t => !t.completed), sortOrder.value))
+  const completed = applyCollapse(sortWithHierarchy(filteredTodos.value.filter(t => t.completed), sortOrder.value))
   const rows: DisplayRow[] = []
   if (pending.length > 0) {
     rows.push({ kind: 'header', group: 'pending', label: '未完成', count: pending.length })

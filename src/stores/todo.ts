@@ -7,15 +7,35 @@ import { getSyncEngine } from '../services/sync-engine'
 // Todo类型定义（保持向前兼容，与 CRDTTodo 等价）
 export type Todo = CRDTTodo
 
+/** 排序方向：desc = 新的在前（默认）；asc = 旧的在前 */
+export type SortOrder = 'asc' | 'desc'
+
 /**
- * 层级排序：顶层任务保持原顺序，每个顶层任务后紧跟其子任务。
- * 用于列表/已完成/搜索视图，保证父任务在子任务上方。
+ * 层级排序：每一层都按创建时间排序，且每个任务后紧跟其后代（子任务、孙任务…），
+ * 保证父任务永远在子任务上方。用于列表/已完成/搜索视图。
+ *
+ * - order = 'desc'（默认）：新的在前，顶层与每一级子任务都是「新 → 旧」
+ * - order = 'asc'：旧的在前，顶层与每一级子任务都是「旧 → 新」
+ *
+ * 创建时间相同（同一毫秒批量创建）时用 id 兜底比较：id 由时间戳 + 随机后缀生成，
+ * 与创建顺序一致，避免 SQLite 对并列行顺序不保证导致同批子任务乱序。
  */
-export function sortWithHierarchy<T extends { id: string; parentId?: string }>(list: T[]): T[] {
-  const byId = new Map(list.map(t => [t.id, t]))
+export function sortWithHierarchy<T extends { id: string; parentId?: string; createdAt?: string }>(
+  list: T[],
+  order: SortOrder = 'desc',
+): T[] {
+  const sign = order === 'asc' ? 1 : -1
+  const sorted = list.slice().sort((a, b) => {
+    const ta = a.createdAt || ''
+    const tb = b.createdAt || ''
+    if (ta !== tb) return (ta < tb ? -1 : 1) * sign
+    if (a.id !== b.id) return (a.id < b.id ? -1 : 1) * sign
+    return 0
+  })
+  const byId = new Map(sorted.map(t => [t.id, t]))
   const children = new Map<string, T[]>()
   const roots: T[] = []
-  for (const t of list) {
+  for (const t of sorted) {
     if (t.parentId && byId.has(t.parentId)) {
       const arr = children.get(t.parentId) ?? []
       arr.push(t)

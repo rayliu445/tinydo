@@ -46,6 +46,8 @@ export interface AppSettings {
   ui: {
     defaultView: 'list' | 'calendar' | 'matrix'
     theme: 'light' | 'dark' | 'system'
+    /** 清单排序方向：desc = 新的在前（默认），asc = 旧的在前；对顶层与每一级子任务同时生效 */
+    sortOrder: 'asc' | 'desc'
   }
   ai: AiSettings
   tts: TtsSettings
@@ -71,6 +73,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   ui: {
     defaultView: 'list',
     theme: 'system',
+    sortOrder: 'desc',
   },
   ai: {
     baseUrl: 'https://api.deepseek.com/v1',
@@ -280,11 +283,12 @@ function loadSettings(): AppSettings {
         const saved = savedProviders.find((sp: any) => sp.id === dp.id)
         return saved ? { ...dp, ...saved } : dp
       })
-      // ai / tts 配置浅合并：旧版本 localStorage 缺字段时补齐默认值
+      // ui / ai / tts 配置浅合并：旧版本 localStorage 缺字段时补齐默认值
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
         providers: mergedProviders,
+        ui: { ...DEFAULT_SETTINGS.ui, ...(parsed.ui || {}) },
         ai: { ...DEFAULT_SETTINGS.ai, ...(parsed.ai || {}) },
         tts: { ...DEFAULT_SETTINGS.tts, ...(parsed.tts || {}) },
       }

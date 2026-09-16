@@ -360,6 +360,30 @@ const icons: Record<string, IconDef> = {
       'M7 7h10v10H7z',
     ],
   },
+
+  // ↓ 排序：新的在前（倒序）- 长线在上 + 向下箭头
+  sortDesc: {
+    viewBox: '0 0 24 24',
+    paths: [
+      'M4 6h11',
+      'M4 12h8',
+      'M4 18h5',
+      'M17 6v9',
+      'M14.5 12.5L17 15l2.5-2.5',
+    ],
+  },
+
+  // ↑ 排序：旧的在前（正序）- 长线在下 + 向上箭头
+  sortAsc: {
+    viewBox: '0 0 24 24',
+    paths: [
+      'M4 6h5',
+      'M4 12h8',
+      'M4 18h11',
+      'M17 18V9',
+      'M14.5 11.5L17 9l2.5 2.5',
+    ],
+  },
 }
 
 const icon = computed(() => {

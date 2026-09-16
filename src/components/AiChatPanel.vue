@@ -163,12 +163,12 @@
               </button>
             </div>
 
-            <!-- 建议卡片：AI 的清单调整建议，需确认后应用 -->
+            <!-- 清单调整卡片：小柴直接执行（无需确认）；历史遗留的待确认卡片仍可手动应用 -->
             <div v-if="m.actions && m.actions.length"
               class="mt-1.5 rounded-xl border px-3 py-2.5"
               :style="{ backgroundColor: 'var(--bg-app)', borderColor: 'var(--border-color)' }">
               <div class="text-xs font-medium mb-1.5" :style="{ color: 'var(--text-secondary)' }">
-                建议调整清单（{{ m.actions.length }} 条，确认后生效）
+                {{ actionCardTitle(m) }}
               </div>
               <div class="space-y-1">
                 <div v-for="(label, i) in m.actionLabels" :key="i"
@@ -195,7 +195,7 @@
                 </button>
               </div>
               <div v-else-if="m.actionsState === 'applied'" class="text-xs mt-2" :style="{ color: '#22c55e' }">
-                ✓ 已应用到清单
+                ✓ 已写入清单
               </div>
               <div v-else-if="m.actionsState === 'dismissed'" class="text-xs mt-2" :style="{ color: 'var(--text-tertiary)' }">
                 已忽略
@@ -341,6 +341,14 @@ function handleClear() {
   if (confirm('确定清空当前会话的全部消息吗？')) {
     aiChat.clearChat()
   }
+}
+
+/** 清单调整卡片的标题：按状态区分「已写入 / 已忽略 / 待确认（历史遗留）」 */
+function actionCardTitle(m: ChatBubble): string {
+  const n = m.actions?.length ?? 0
+  if (m.actionsState === 'applied') return `已调整清单（${n} 条）`
+  if (m.actionsState === 'dismissed') return `建议调整清单（${n} 条，已忽略）`
+  return `建议调整清单（${n} 条，确认后生效）`
 }
 
 // ============ 朗读 ============
