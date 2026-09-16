@@ -116,7 +116,27 @@ jobs:
           distribution: temurin
           java-version: 21
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        run: |
+          # ubuntu-latest 已预装 Android SDK，直接用即可。
+          # 不再使用 android-actions/setup-android@v3：该 action 固定执行
+          # `sdkmanager tools`，而 Google 已下架旧版 tools 包（runner 镜像
+          # 20260907 起为 cmdline-tools 16.0），必然报
+          # "Warning: Failed to find package 'tools'" 并以 exit 1 结束，
+          # 导致 Android 任务失败、create-release 被跳过（2026-09-16 起）。
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          echo "使用预装 Android SDK: $SDK"
+          SDKMGR=$(ls -d "$SDK"/cmdline-tools/*/bin/sdkmanager 2>/dev/null | head -1)
+          if [ -z "$SDKMGR" ] || [ ! -x "$SDKMGR" ]; then
+            echo "::error::未找到 sdkmanager（$SDK 下没有 cmdline-tools），请检查 runner 镜像"
+            exit 1
+          fi
+          echo "sdkmanager: $SDKMGR"
+          "$SDKMGR" --version
+          # 接受许可（构建缺失组件时 AGP 会自动下载），platform-tools 缺失则补装
+          yes | "$SDKMGR" --licenses > /dev/null 2>&1 || true
+          "$SDKMGR" --install platform-tools > /dev/null 2>&1 || true
       - run: npm ci
       - run: npm run build
       - name: Set up Android project
