@@ -431,12 +431,12 @@
           <div class="text-sm font-medium mb-2" :style="{ color: 'var(--text-primary)' }">在 DSH 里启用</div>
           <pre class="text-xs p-3 rounded-lg overflow-x-auto"
             :style="{ backgroundColor: 'var(--bg-app)', color: 'var(--text-secondary)' }">cd ~/.dsh/profiles/web
-pnpm add link:{{ externalInfo?.appPath || '<TinyDo 仓库路径>' }}/agent/dsh-plugin</pre>
+pnpm add tinydo-agent        # 本地开发用 pnpm add link:&lt;tinydo-agent 仓库路径&gt;</pre>
           <div class="text-xs mt-2 leading-relaxed" :style="{ color: 'var(--text-secondary)' }">
-            必须用 <code>link:</code>（<code>file:</code> 会拷贝目录，插件就找不到仓库里的客户端）。
-            然后把 <code>tinydo-dsh-plugin</code> 加进该 <code>package.json</code> 的
+            客户端（CLI + 插件 + 客户端库）在独立仓库 <code>rayliu445/tinydo-agent</code>；
+            安装后把 <code>tinydo-agent</code> 加进该 <code>package.json</code> 的
             <code>dsh.profile.bundles</code>，重启 DSH 即可获得 tinydo_* 工具。
-            未装插件也能用：让 DSH 直接执行 <code>tinydo list --today</code> 这类命令。
+            未装插件也能用：让 DSH 直接执行 <code>npx tinydo-agent list --today</code> 这类命令。
           </div>
         </div>
 

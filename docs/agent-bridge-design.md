@@ -428,7 +428,20 @@ ctx.tools.register(tool)             // 唯一用到的宿主方法
 4. 安装方式：`file:` 会拷贝插件目录，插件的 `../lib/client.mjs` 解析失败 → 改用 `link:`（文档与设置面板指引均已更正）。
 
 **已知边界**：App 需在运行（CLI 自动拉起兜底）；工具注册需重启 DSH 才生效；
-DSH 预览版升级后若工具面变化，按 `agent/dsh-plugin/README.md` 的 30 秒自检处理，期间可用 skill 降级通道。
+DSH 预览版升级后若工具面变化，跑一次 `tinydo-agent` 的 `npm test`（内含宿主 schema 校验器）或按它的
+README 自检，期间可用 skill 降级通道。
+
+**仓库拆分（2026-09-18）**：客户端 / CLI / DSH 插件已迁到独立仓库 **`tinydo-agent`**
+（`lib/client.mjs` + `cli.mjs` + `index.js` + `skills/` + 自有自检），并补齐了可发布元数据
+（`bin` / `files` / `dsh.bundle.patch` / `engines.dsh` / `dshhub` / `keywords` / `license` / `repository`）。
+
+- **本仓库（App 侧）只保留**：`electron/local-api.js`、`src/services/local-api.ts`、
+  `src/services/task-query.ts`、设置面板、以及**自包含的协议契约测试** `tests/api-contract.mjs`
+  与桥接单元测试 `tests/bridge-unit.mjs`（都不再依赖客户端代码）。
+- **跨仓库的接口只有 HTTP 协议**：`GET /health` 返回 `api: 1`；客户端声明「需要 TinyDo ≥ 0.1.22」。
+  两边独立发版，谁升级都不拖累对方；协议变更时同步改 `PROTOCOL_VERSION` 与契约测试。
+- 迁移前的形态（插件作为 App 仓库子目录）无法发布：跨目录 `import '../lib/client.mjs'` 使其不自包含，
+  且缺市场收录所需元数据。
 
 **自动拉起实测**：清空发现文件、App 未运行时执行 `tinydo list --today` →
 自动启动（vite + electron）→ 7.5 秒内返回结果。打包版路径走 `open -a TinyDo`，

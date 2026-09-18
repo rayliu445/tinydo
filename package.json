@@ -17,10 +17,9 @@
     "mobile:build:android": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
     "release:all": "npm run build && npx cap sync && electron-builder",
     "release:local": "bash scripts/build-all.sh",
-    "tinydo": "node agent/cli.mjs",
-    "selftest": "node agent/selftest.mjs",
-    "selftest:bridge": "node agent/tests/bridge-unit.mjs",
-    "selftest:plugin": "node agent/tests/plugin-e2e.mjs"
+    "selftest": "node tests/api-contract.mjs",
+    "selftest:bridge": "node tests/bridge-unit.mjs",
+    "selftest:agent": "node ../tinydo-agent/tests/client-e2e.mjs && node ../tinydo-agent/tests/plugin-e2e.mjs"
   },
   "main": "electron/main.js",
   "dependencies": {

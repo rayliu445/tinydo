@@ -16,8 +16,7 @@ process.env.TINYDO_API_PORT_FILE = PORT_FILE
 process.env.TINYDO_API_AUDIT_FILE = AUDIT_FILE
 
 const require = createRequire(import.meta.url)
-const bridge = require('../../electron/local-api.js')
-const { createClient, TinyDoApiError } = await import('../lib/client.mjs')
+const bridge = require('../electron/local-api.js')
 
 let pass = 0
 let failed = 0
@@ -116,15 +115,9 @@ async function main() {
   }
   check('端口已停止监听（连接被拒）', refused)
 
-  console.log('\n5. 客户端识别「已关闭」')
-  const client = createClient({ autoLaunch: false })
-  let code = ''
-  try {
-    await client.listTasks({ view: 'today' })
-  } catch (err) {
-    code = err instanceof TinyDoApiError ? err.code : 'UNEXPECTED'
-  }
-  check('客户端报 DISABLED 而不是 NOT_RUNNING', code === 'DISABLED', `实得 ${code}`)
+  console.log('\n5. 关闭标记（供客户端识别「已被关闭」而不是「App 未运行」）')
+  const marker = readPortFile()
+  check('发现文件写入 enabled=false 且端口置空', marker.enabled === false && marker.port === 0)
 
   console.log('\n6. 退出清理')
   bridge.cleanupLocalApi()

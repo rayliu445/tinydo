@@ -1,4 +1,0 @@
-#!/bin/sh
-# tinydo —— TinyDo 命令行入口（供 PATH 软链或直接调用）
-# 依赖：本机装了 Node 18+；App 在运行（不在时会自动拉起）
-exec node "$(dirname "$0")/cli.mjs" "$@"

@@ -1,6 +1,0 @@
-# dsh bundle layer: 挂载 TinyDo 插件（index.js 通过 package root export）。
-# 安装：pnpm add file:<TinyDo 仓库>/agent/dsh-plugin
-# 然后把 "tinydo-dsh-plugin" 加入 profile package.json 的 dsh.profile.bundles
-- insert:
-    - id: tinydo
-      name: 'tinydo-dsh-plugin'

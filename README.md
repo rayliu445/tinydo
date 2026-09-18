@@ -29,33 +29,36 @@ TinyDo 是一款对标滴答清单的个人任务管理工具，支持多平台�
 - 🔄 **WebDAV 云同步** — 连接坚果云、NextCloud 等，多端数据互通
 - ✏️ **任务管理** — 添加 / 编辑 / 删除 / 搜索 / 优先级 / 截止日期
 - ⚙️ **设置页面** — 数据导出导入、云存储配置、主题切换
-- 🤖 **外部助手（DSH / CLI）** — 本地桥接接口 + `tinydo` 命令行 + DSH 原生工具，让外部 Agent 直接读写信箱任务
+- 🤖 **外部助手（DSH / CLI）** — 本地桥接接口（协议 `api: 1`），配合独立仓库 [tinydo-agent](https://github.com/rayliu445/tinydo-agent) 的 `tinydo` CLI 与 DSH 原生工具使用
 
 ## 外部助手（DSH / CLI）
 
 桌面端在 `127.0.0.1` 上开放一个带 token 的本地接口，让 DSH 等外部 Agent 直接读写任务
-（App 始终是唯一写入者：界面实时刷新、云同步照常、每次写入留审计）。三层：
+（App 始终是唯一写入者：界面实时刷新、云同步照常、每次写入留审计）。
+
+**客户端（`tinydo` CLI + DSH 插件 + 客户端库）在独立仓库：**
+[rayliu445/tinydo-agent](https://github.com/rayliu445/tinydo-agent) —— 它只依赖本接口，不依赖本仓库代码。
+接口契约见 `docs/agent-bridge-design.md`；两边各自独立发版。
 
 ```bash
-# 1) 命令行（人 / 脚本 / 任意 Agent 都能用）
-npm run tinydo -- list --today
-npm run tinydo -- add "写周报" --due 明天 --priority high
-npm run tinydo -- stats
-npm run tinydo -- doctor          # App / 端口 / token / 数据层自检
+# 命令行（人 / 脚本 / 任意 Agent 都能用；装在 tinydo-agent 里）
+npx tinydo-agent list --today
+npx tinydo-agent add "写周报" --due 明天 --priority high
+npx tinydo-agent doctor           # App / 端口 / token / 数据层自检
 
-# 2) DSH 原生工具（9 个 tinydo_*，需重启 DSH）
+# DSH 原生工具（9 个 tinydo_*，安装后重启 DSH）
 cd ~/.dsh/profiles/web
-pnpm add link:/path/to/tinydo/agent/dsh-plugin
-# 把 "tinydo-dsh-plugin" 加进 dsh.profile.bundles
+pnpm add tinydo-agent
+# 把 "tinydo-agent" 加进 dsh.profile.bundles
 
-# 3) 自检
-npm run selftest          # 接口端到端（36 项）
-npm run selftest:plugin   # DSH 插件端到端（25 项）
-npm run selftest:bridge   # 桥接单元（13 项）
+# 本仓库自检（App 侧，自包含、不依赖客户端代码）
+npm run selftest          # 本地接口协议契约
+npm run selftest:bridge   # 桥接主进程单元测试
+npm run selftest:agent    # 顺带跑 tinydo-agent 的两套端到端（需克隆到同级目录）
 ```
 
 开关在「设置 → 外部助手」（可随时关闭、吊销 token、查看写入记录）。
-设计文档：`docs/agent-bridge-design.md`；决策记录：`docs/adr/0004-external-agent-bridge.md`。
+决策记录：`docs/adr/0004-external-agent-bridge.md`。
 
 ## 平台
 
