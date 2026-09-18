@@ -42,13 +42,13 @@ TinyDo 是一款对标滴答清单的个人任务管理工具，支持多平台�
 
 ```bash
 # 命令行（人 / 脚本 / 任意 Agent 都能用；装在 tinydo-agent 里）
-npx tinydo-agent list --today
-npx tinydo-agent add "写周报" --due 明天 --priority high
-npx tinydo-agent doctor           # App / 端口 / token / 数据层自检
+npx github:rayliu445/tinydo-agent list --today
+npx github:rayliu445/tinydo-agent add "写周报" --due 明天 --priority high
+npx github:rayliu445/tinydo-agent doctor           # App / 端口 / token / 数据层自检
 
 # DSH 原生工具（9 个 tinydo_*，安装后重启 DSH）
 cd ~/.dsh/profiles/web
-pnpm add tinydo-agent
+pnpm add github:rayliu445/tinydo-agent#v0.1.0
 # 把 "tinydo-agent" 加进 dsh.profile.bundles
 
 # 本仓库自检（App 侧，自包含、不依赖客户端代码）
