@@ -51,6 +51,10 @@ export interface AppSettings {
   }
   ai: AiSettings
   tts: TtsSettings
+  /** 外部助手（DSH / CLI）本地桥接：关闭后不再监听 127.0.0.1 端口 */
+  externalAgent: {
+    enabled: boolean
+  }
 }
 
 const DEFAULT_SETTINGS: AppSettings = {
@@ -87,6 +91,10 @@ const DEFAULT_SETTINGS: AppSettings = {
     edgeVoice: 'zh-CN-XiaoxiaoNeural',
     rate: 1,
     systemVoiceURI: '',
+  },
+  externalAgent: {
+    // 默认开启：只监听 127.0.0.1 且需 token，设置页可随时一键关闭
+    enabled: true,
   },
 }
 
@@ -249,6 +257,12 @@ export const useSettingsStore = defineStore('settings', () => {
     saveSettings(settings.value)
   }
 
+  /** 更新外部助手（本地桥接）开关 */
+  function updateExternalAgent(patch: Partial<AppSettings['externalAgent']>) {
+    settings.value.externalAgent = { ...settings.value.externalAgent, ...patch }
+    saveSettings(settings.value)
+  }
+
   return {
     settings,
     activeProvider,
@@ -264,6 +278,7 @@ export const useSettingsStore = defineStore('settings', () => {
     updateUISettings,
     updateAiSettings,
     updateTtsSettings,
+    updateExternalAgent,
   }
 })
 
@@ -283,7 +298,7 @@ function loadSettings(): AppSettings {
         const saved = savedProviders.find((sp: any) => sp.id === dp.id)
         return saved ? { ...dp, ...saved } : dp
       })
-      // ui / ai / tts 配置浅合并：旧版本 localStorage 缺字段时补齐默认值
+      // ui / ai / tts / externalAgent 配置浅合并：旧版本 localStorage 缺字段时补齐默认值
       return {
         ...DEFAULT_SETTINGS,
         ...parsed,
@@ -291,6 +306,7 @@ function loadSettings(): AppSettings {
         ui: { ...DEFAULT_SETTINGS.ui, ...(parsed.ui || {}) },
         ai: { ...DEFAULT_SETTINGS.ai, ...(parsed.ai || {}) },
         tts: { ...DEFAULT_SETTINGS.tts, ...(parsed.tts || {}) },
+        externalAgent: { ...DEFAULT_SETTINGS.externalAgent, ...(parsed.externalAgent || {}) },
       }
     }
   } catch {

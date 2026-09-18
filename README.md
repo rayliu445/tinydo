@@ -29,6 +29,33 @@ TinyDo 是一款对标滴答清单的个人任务管理工具，支持多平台�
 - 🔄 **WebDAV 云同步** — 连接坚果云、NextCloud 等，多端数据互通
 - ✏️ **任务管理** — 添加 / 编辑 / 删除 / 搜索 / 优先级 / 截止日期
 - ⚙️ **设置页面** — 数据导出导入、云存储配置、主题切换
+- 🤖 **外部助手（DSH / CLI）** — 本地桥接接口 + `tinydo` 命令行 + DSH 原生工具，让外部 Agent 直接读写信箱任务
+
+## 外部助手（DSH / CLI）
+
+桌面端在 `127.0.0.1` 上开放一个带 token 的本地接口，让 DSH 等外部 Agent 直接读写任务
+（App 始终是唯一写入者：界面实时刷新、云同步照常、每次写入留审计）。三层：
+
+```bash
+# 1) 命令行（人 / 脚本 / 任意 Agent 都能用）
+npm run tinydo -- list --today
+npm run tinydo -- add "写周报" --due 明天 --priority high
+npm run tinydo -- stats
+npm run tinydo -- doctor          # App / 端口 / token / 数据层自检
+
+# 2) DSH 原生工具（9 个 tinydo_*，需重启 DSH）
+cd ~/.dsh/profiles/web
+pnpm add link:/path/to/tinydo/agent/dsh-plugin
+# 把 "tinydo-dsh-plugin" 加进 dsh.profile.bundles
+
+# 3) 自检
+npm run selftest          # 接口端到端（36 项）
+npm run selftest:plugin   # DSH 插件端到端（25 项）
+npm run selftest:bridge   # 桥接单元（13 项）
+```
+
+开关在「设置 → 外部助手」（可随时关闭、吊销 token、查看写入记录）。
+设计文档：`docs/agent-bridge-design.md`；决策记录：`docs/adr/0004-external-agent-bridge.md`。
 
 ## 平台
 

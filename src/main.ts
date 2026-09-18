@@ -1,10 +1,11 @@
-import { createApp } from 'vue'
+import { createApp, watch } from 'vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
 import { createPinia } from 'pinia'
 import App from './App.vue'
 import { routes } from './routes'
 import { createDataAccess } from './services/data-access'
 import { getSyncEngine } from './services/sync-engine'
+import { handleLocalApiRequest, markLocalApiDataReady } from './services/local-api'
 import { initTheme } from './stores/theme'
 import './index.css'
 
@@ -24,6 +25,48 @@ app.mount('#app')
 // 初始化主题
 initTheme()
 
+// ============ 外部助手（DSH / CLI）本地桥接 ============
+// 主进程在 127.0.0.1 起 HTTP 服务，请求经 IPC 到这里 → services/local-api.ts → 真实数据层。
+// 这一层只做「接活 → 交给 local-api → 回结果」，业务语义全部复用现有 store。
+function setupExternalAgentBridge() {
+  const api = (window as any).electronAPI
+  if (!api?.onLocalApiRequest || !api?.replyLocalApi || !api?.localApiSetEnabled) {
+    return // Web / 预览环境没有本地桥接
+  }
+
+  api.onLocalApiRequest(async (req: any) => {
+    let res: any
+    try {
+      res = await handleLocalApiRequest(req)
+    } catch (err) {
+      res = {
+        status: 500,
+        body: { error: { code: 'INTERNAL', message: err instanceof Error ? err.message : String(err) } },
+      }
+    }
+    try {
+      // IPC 只能传结构化可克隆的数据：这里做一次纯数据化，避免 Vue 响应式代理导致回包失败
+      api.replyLocalApi(req.id, JSON.parse(JSON.stringify(res)))
+    } catch (err) {
+      console.error('[LocalAPI] 回包失败:', err)
+    }
+  })
+
+  // 开关状态同步给主进程：关闭时是真的停止监听端口（而不是只在应用层拦截）
+  import('./stores/settings').then(({ useSettingsStore }) => {
+    try {
+      const settingsStore = useSettingsStore()
+      const sync = (enabled: unknown) => api.localApiSetEnabled(enabled !== false)
+      sync(settingsStore.settings.externalAgent?.enabled !== false)
+      watch(() => settingsStore.settings.externalAgent?.enabled, (v) => sync(v !== false))
+    } catch (err) {
+      console.warn('[LocalAPI] 开关同步失败（不影响 App 使用）:', err)
+    }
+  })
+}
+
+setupExternalAgentBridge()
+
 // ============ 异步初始化数据层（不阻塞渲染） ============
 async function initializeDataLayer() {
   try {
@@ -36,6 +79,9 @@ async function initializeDataLayer() {
     const store = useTodoStore()
     store.fetchTodos()
     console.log('[App] Todos refreshed after data layer init')
+
+    // 数据层就绪：放行外部助手（本地 API）等待中的请求
+    markLocalApiDataReady()
   } catch (err) {
     console.error('[App] Data layer init failed (app still works):', err)
   }

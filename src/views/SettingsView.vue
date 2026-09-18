@@ -368,6 +368,100 @@
         </div>
       </div>
 
+      <!-- ===== 外部助手（DSH / CLI） ===== -->
+      <div v-if="activeTab === 'agent'" class="p-6 max-w-2xl space-y-3">
+        <div class="rounded-xl p-5" :style="{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }">
+          <div class="flex items-start gap-4">
+            <div class="w-10 h-10 rounded-xl flex items-center justify-center shrink-0"
+              :style="{ backgroundColor: 'var(--color-accent-light)' }">
+              <AppIcon name="send" :size="20" color="var(--color-accent)" />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">外部助手（DSH / CLI）</div>
+              <div class="text-xs mt-0.5 leading-relaxed" :style="{ color: 'var(--text-secondary)' }">
+                让 DSH 等外部 Agent 通过本机接口读写任务。接口只监听 127.0.0.1，需要 token；
+                App 始终是唯一写入者（界面实时刷新、云同步照常），每次写入都会留下记录。
+              </div>
+            </div>
+          </div>
+
+          <label class="flex items-center gap-2 cursor-pointer mt-4">
+            <input v-model="externalEnabled" type="checkbox" class="checkbox-tick" @change="saveExternalEnabled" />
+            <span class="text-sm" :style="{ color: 'var(--text-primary)' }">启用本地桥接</span>
+          </label>
+
+          <div v-if="isElectron" class="mt-4 text-xs space-y-1.5">
+            <div class="flex items-center gap-2">
+              <span class="w-16 shrink-0" :style="{ color: 'var(--text-tertiary)' }">状态</span>
+              <span :style="{ color: externalInfo?.port ? '#22c55e' : 'var(--text-secondary)' }">
+                {{ externalInfo?.port ? `监听中 · 127.0.0.1:${externalInfo.port}` : '未监听' }}
+              </span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="w-16 shrink-0" :style="{ color: 'var(--text-tertiary)' }">Token</span>
+              <code class="px-1.5 py-0.5 rounded"
+                :style="{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }">
+                {{ tokenVisible ? (externalInfo?.token || '—') : '••••••••••••' }}
+              </code>
+              <button class="px-2 py-0.5 rounded transition-all duration-150"
+                :style="{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }"
+                @click="tokenVisible = !tokenVisible">
+                {{ tokenVisible ? '隐藏' : '显示' }}
+              </button>
+              <button class="px-2 py-0.5 rounded transition-all duration-150"
+                :style="{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }"
+                title="重新生成后，旧的客户端需要重读发现文件（CLI 会自动处理）"
+                @click="revokeExternalToken">
+                重新生成
+              </button>
+            </div>
+            <div class="flex items-start gap-2">
+              <span class="w-16 shrink-0" :style="{ color: 'var(--text-tertiary)' }">发现文件</span>
+              <span class="break-all" :style="{ color: 'var(--text-secondary)' }">{{ externalInfo?.portFile || '—' }}</span>
+            </div>
+          </div>
+          <div v-else class="mt-4 text-xs" :style="{ color: 'var(--text-secondary)' }">
+            本地桥接只在桌面端（Electron）可用；Web 与移动端不支持。
+          </div>
+        </div>
+
+        <!-- 在 DSH 里启用 -->
+        <div v-if="isElectron" class="rounded-xl p-5"
+          :style="{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }">
+          <div class="text-sm font-medium mb-2" :style="{ color: 'var(--text-primary)' }">在 DSH 里启用</div>
+          <pre class="text-xs p-3 rounded-lg overflow-x-auto"
+            :style="{ backgroundColor: 'var(--bg-app)', color: 'var(--text-secondary)' }">cd ~/.dsh/profiles/web
+pnpm add link:{{ externalInfo?.appPath || '<TinyDo 仓库路径>' }}/agent/dsh-plugin</pre>
+          <div class="text-xs mt-2 leading-relaxed" :style="{ color: 'var(--text-secondary)' }">
+            必须用 <code>link:</code>（<code>file:</code> 会拷贝目录，插件就找不到仓库里的客户端）。
+            然后把 <code>tinydo-dsh-plugin</code> 加进该 <code>package.json</code> 的
+            <code>dsh.profile.bundles</code>，重启 DSH 即可获得 tinydo_* 工具。
+            未装插件也能用：让 DSH 直接执行 <code>tinydo list --today</code> 这类命令。
+          </div>
+        </div>
+
+        <!-- 活动日志 -->
+        <div v-if="isElectron" class="rounded-xl p-5"
+          :style="{ backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)' }">
+          <div class="flex items-center justify-between mb-2">
+            <div class="text-sm font-medium" :style="{ color: 'var(--text-primary)' }">最近写入记录</div>
+            <button class="text-xs px-2 py-0.5 rounded transition-all duration-150"
+              :style="{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }"
+              @click="loadExternalAudit">
+              刷新
+            </button>
+          </div>
+          <div v-if="!externalAudit.length" class="text-xs" :style="{ color: 'var(--text-tertiary)' }">
+            （还没有外部写入）
+          </div>
+          <div v-for="(e, i) in externalAudit" :key="i" class="text-xs py-0.5 flex items-start gap-2">
+            <span class="shrink-0" :style="{ color: 'var(--text-tertiary)' }">{{ formatAuditTime(e.ts) }}</span>
+            <span class="shrink-0 px-1 rounded" :style="{ backgroundColor: 'var(--bg-hover)', color: 'var(--text-secondary)' }">{{ e.actor || 'external' }}</span>
+            <span :style="{ color: 'var(--text-secondary)' }">{{ e.summary || e.action }}</span>
+          </div>
+        </div>
+      </div>
+
       <!-- ===== 关于 ===== -->
       <div v-if="activeTab === 'about'" class="p-6 max-w-2xl space-y-3">
         <div class="rounded-xl p-8 text-center"
@@ -504,7 +598,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useSettingsStore } from '../stores/settings'
 import { themeMode as tm, setThemeMode } from '../stores/theme'
@@ -516,7 +610,7 @@ import { speakWithSettings, stopSpeaking, ttsState } from '../services/tts'
 
 const router = useRouter()
 const store = useSettingsStore()
-const activeTab = ref<'storage' | 'sync' | 'ai' | 'theme' | 'about'>('storage')
+const activeTab = ref<'storage' | 'sync' | 'ai' | 'agent' | 'theme' | 'about'>('storage')
 
 // 版本号：由 vite.config.js 注入（读取自 package.json，随版本发布自动更新）
 const appVersion = __APP_VERSION__
@@ -591,10 +685,65 @@ function handleInstallUpdate() {
   })
 }
 
+// ============ 外部助手（DSH / CLI）本地桥接 ============
+const externalEnabled = ref(store.settings.externalAgent?.enabled !== false)
+const externalInfo = ref<any>(null)
+const externalAudit = ref<any[]>([])
+const tokenVisible = ref(false)
+
+async function loadExternalInfo() {
+  if (!isElectron) return
+  try {
+    externalInfo.value = await (window as any).electronAPI.localApiInfo()
+  } catch (err) {
+    console.warn('[外部助手] 读取状态失败:', err)
+  }
+}
+
+async function loadExternalAudit() {
+  if (!isElectron) return
+  try {
+    externalAudit.value = await (window as any).electronAPI.localApiAudit(20)
+  } catch (err) {
+    console.warn('[外部助手] 读取日志失败:', err)
+  }
+}
+
+function saveExternalEnabled() {
+  store.updateExternalAgent({ enabled: externalEnabled.value })
+  // 主进程收到开关后会真正启动/停止监听，稍等再读一次状态
+  setTimeout(loadExternalInfo, 400)
+}
+
+async function revokeExternalToken() {
+  if (!isElectron) return
+  await (window as any).electronAPI.localApiRevokeToken()
+  await loadExternalInfo()
+}
+
+function formatAuditTime(ts: string) {
+  try {
+    return new Date(ts).toLocaleString('zh-CN', {
+      hour12: false, month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+    })
+  } catch {
+    return ts
+  }
+}
+
+// 切到「外部助手」标签时加载状态与日志
+watch(activeTab, (tab) => {
+  if (tab === 'agent') {
+    loadExternalInfo()
+    loadExternalAudit()
+  }
+}, { immediate: true })
+
 const tabs = [
   { id: 'storage' as const, label: '存储', icon: 'storage' },
   { id: 'sync' as const, label: '同步', icon: 'sync' },
   { id: 'ai' as const, label: 'AI 助手', icon: 'ai' },
+  { id: 'agent' as const, label: '外部助手', icon: 'send' },
   { id: 'theme' as const, label: '主题', icon: 'palette' },
   { id: 'about' as const, label: '关于', icon: 'about' },
 ]

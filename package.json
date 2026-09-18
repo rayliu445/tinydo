@@ -1,23 +1,6 @@
 {
   "name": "tinydo",
-  "version": "0.1.21",
-  "scripts": {
-    "dev": "vite",
-    "stop": "kill $(lsof -ti:3000)",
-    "build": "vite build && node scripts/postbuild.js",
-    "lint": "eslint . --ext .js,.ts,.vue",
-    "lint:fix": "eslint . --ext .js,.ts,.vue --fix",
-    "electron:serve": "electron .",
-    "electron:build": "npm run build && electron-builder --dir",
-    "dist": "electron-builder",
-    "mobile:sync": "npx cap sync",
-    "mobile:open:ios": "npx cap open ios",
-    "mobile:open:android": "npx cap open android",
-    "mobile:build:ios": "bash scripts/build-ios.sh",
-    "mobile:build:android": "npm run build && npx cap sync android && cd android && ./gradlew assembleRelease",
-    "release:all": "npm run build && npx cap sync && electron-builder",
-    "release:local": "bash scripts/build-all.sh"
-  },
+  "version": "0.1.22",
   "main": "electron/main.js",
   "dependencies": {
     "@capacitor/android": "^8.4.2",
@@ -35,83 +18,6 @@
     "vue": "^3.2.31",
     "vue-router": "^4.2.0",
     "ws": "^8.21.3"
-  },
-  "devDependencies": {
-    "@types/node": "^18.0.0",
-    "@typescript-eslint/eslint-plugin": "^5.12.1",
-    "@typescript-eslint/parser": "^5.12.1",
-    "@vue/compiler-sfc": "^3.2.31",
-    "@vue/eslint-config-typescript": "^10.0.0",
-    "autoprefixer": "^10.4.14",
-    "babel-eslint": "^10.1.0",
-    "electron": "^30.0.0",
-    "electron-builder": "^24.13.3",
-    "eslint": "^8.9.0",
-    "eslint-plugin-vue": "^8.5.0",
-    "level": "^10.0.0",
-    "postcss": "^8.4.23",
-    "prettier": "^2.5.1",
-    "qiniu": "^7.15.2",
-    "typescript": "^4.5.5",
-    "vite": "^2.8.4"
-  },
-  "build": {
-    "appId": "com.tinydo.app",
-    "productName": "TinyDo",
-    "directories": {
-      "output": "dist-electron"
-    },
-    "mac": {
-      "target": [
-        {
-          "target": "dir",
-          "arch": [
-            "arm64"
-          ]
-        }
-      ],
-      "category": "public.app-category.productivity",
-      "artifactName": "TinyDo-${version}-mac",
-      "identity": null,
-      "icon": "resources/icon.png"
-    },
-    "win": {
-      "target": [
-        {
-          "target": "portable",
-          "arch": [
-            "x64"
-          ]
-        }
-      ],
-      "artifactName": "TinyDo-${version}-win.exe",
-      "icon": "resources/icon.png"
-    },
-    "files": [
-      "dist/**/*",
-      "electron/main.js",
-      "electron/preload.js",
-      "config.json"
-    ],
-    "dmg": {
-      "window": {
-        "width": 540,
-        "height": 380
-      },
-      "contents": [
-        {
-          "x": 130,
-          "y": 220
-        },
-        {
-          "x": 410,
-          "y": 220,
-          "type": "link",
-          "path": "/Applications"
-        }
-      ]
-    },
-    "afterSign": null
   },
   "description": "对标滴答清单的个人任务管理工具",
   "author": "TinyDo Team"

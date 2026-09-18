@@ -31,4 +31,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
   // 小柴朗读：Edge TTS 合成（主进程带特征头直连，返回 MP3 base64）
   ttsEdgeSynthesize: (payload) => ipcRenderer.invoke('tts-edge-synthesize', payload),
+
+  // ============ 外部助手（DSH / CLI）本地桥接 ============
+  // 主进程收到 HTTP 请求 → 这里转给渲染层真实数据层执行 → 回结果
+  onLocalApiRequest: (cb) => {
+    const handler = (_e, payload) => cb(payload)
+    ipcRenderer.on('local-api:request', handler)
+    return () => ipcRenderer.removeListener('local-api:request', handler)
+  },
+  replyLocalApi: (id, payload) => ipcRenderer.send('local-api:reply', id, payload),
+  localApiSetEnabled: (enabled) => ipcRenderer.invoke('local-api:set-enabled', enabled),
+  localApiInfo: () => ipcRenderer.invoke('local-api:info'),
+  localApiAudit: (limit) => ipcRenderer.invoke('local-api:audit', limit),
+  localApiRevokeToken: () => ipcRenderer.invoke('local-api:revoke-token'),
 })

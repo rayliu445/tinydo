@@ -1,0 +1,26 @@
+{
+  "name": "tinydo-dsh-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TinyDo 任务清单的 DSH 原生工具：让 Agent 直接读写待办（本地桥接，App 保持唯一写入者）",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "README.md",
+    "skills"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "compatibility": {
+      "dsh": ">=0.1.0-rc.5"
+    }
+  }
+}

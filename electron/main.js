@@ -6,6 +6,12 @@ const http = require('http')
 const https = require('https')
 const crypto = require('crypto')
 const { execSync } = require('child_process')
+const { setupLocalApi, cleanupLocalApi } = require('./local-api')
+
+// 测试 / CI：允许用环境变量隔离用户数据目录，避免动到真实数据
+if (process.env.TINYDO_USER_DATA) {
+  app.setPath('userData', process.env.TINYDO_USER_DATA)
+}
 
 // 允许 file:// 协议加载 ES Module（解决 type="module" + file:// 的 CORS 限制）
 app.commandLine.appendSwitch('--allow-file-access-from-files')
@@ -134,12 +140,14 @@ function writeDb(data) {
 }
 
 let mainWindow
-function createWindow() {
-  info('Creating browser window')
+function createWindow(options = {}) {
+  const { hidden = false } = options
+  info(`Creating browser window${hidden ? ' (hidden)' : ''}`)
 
   mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
+    show: !hidden,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: true,
@@ -208,8 +216,8 @@ function createWindow() {
     })
   })
 
-  // 仅在非打包环境（本地开发/测试）时打开 DevTools
-  if (!app.isPackaged) {
+  // 仅在非打包环境（本地开发/测试）时打开 DevTools（隐藏窗口不弹）
+  if (!app.isPackaged && !hidden) {
     mainWindow.webContents.openDevTools({ mode: 'detach' })
     info('DevTools opened for local testing')
   }
@@ -246,6 +254,25 @@ function createWindow() {
   mainWindow.on('closed', () => {
     info('Window closed')
     mainWindow = null
+  })
+
+  return mainWindow
+}
+
+/**
+ * 外部助手（本地 API）需要渲染层执行数据操作：
+ * 窗口不在时（macOS 关窗但 App 仍存活）按需创建一个隐藏窗口并等它加载完。
+ */
+function ensureRendererWindow() {
+  return new Promise((resolve, reject) => {
+    if (mainWindow && !mainWindow.isDestroyed()) return resolve(mainWindow)
+    createWindow({ hidden: true })
+    const win = mainWindow
+    const timer = setTimeout(() => reject(new Error('渲染层窗口加载超时')), 20000)
+    win.webContents.once('did-finish-load', () => {
+      clearTimeout(timer)
+      resolve(win)
+    })
   })
 }
 
@@ -714,9 +741,25 @@ app.whenReady().then(() => {
   info('App is ready')
   createWindow()
 
+  // 外部助手（CLI / DSH 插件）本地桥接：只在 127.0.0.1 监听，
+  // 是否真正开监听由渲染层按「设置 → 外部助手」开关同步过来。
+  setupLocalApi({
+    ipcMain,
+    version: app.getVersion(),
+    appPath: app.getAppPath(),
+    info,
+    warn,
+    error,
+    ensureWindow: ensureRendererWindow,
+  })
+
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+})
+
+app.on('will-quit', function () {
+  cleanupLocalApi()
 })
 
 app.on('window-all-closed', function () {

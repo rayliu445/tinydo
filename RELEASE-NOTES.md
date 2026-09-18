@@ -1,5 +1,31 @@
 # TinyDo - 发布说明
 
+## v0.1.22（2026-09-18）—— 外部助手：让 DSH / CLI 直接驱动 TinyDo
+
+### 新增：外部助手（本地桥接接口 + tinydo CLI + DSH 原生工具）
+
+- **本地接口**：桌面端在 `127.0.0.1` 开放带 token 的 HTTP 接口（token 每次启动轮换、仅回环地址监听），
+  请求经渲染层真实数据层执行——**App 始终是唯一写入者**：界面实时刷新、云同步照常、级联语义与手点完全一致。
+- **`tinydo` 命令行**：`list / get / add / edit / done / rm / bulk / stats / log / doctor`，
+  支持 `--json` / `--dry-run`；App 没运行时会自动拉起（实测冷启动约 7.5s）。
+- **DSH 原生工具**（9 个）：`tinydo_list_tasks` / `get_task` / `add_task` / `update_task` /
+  `complete_task` / `delete_task` / `bulk_add_tasks` / `stats` / `recent_changes`；
+  随包附降级技能——插件失效时 DSH 仍可用 CLI 驱动（工具面变化不会让人没法干活）。
+- **安全与可见**：仅监听回环地址、Bearer token 可随时吊销；设置页新增「外部助手」面板
+  （开关 / 端口与 token / 最近写入记录 / DSH 安装指引）；所有外部写入记录在 `~/.tinydo/audit.jsonl`。
+- 视图过滤与层级排序抽成单一实现（`src/services/task-query.ts`），UI 与外部助手共用，避免规则漂移。
+
+### 修复：打包白名单漏了新文件（会导致打包版启动失败）
+
+`package.json` 的 `build.files` 是白名单，新增的 `electron/local-api.js` 未被列入——按原样打包，
+主进程 `require('./local-api')` 会失败。已加入白名单，并实测打包产物：桥接正常监听、数据层加载正常。
+
+### 开发者
+
+- 自检：`npm run selftest`（接口端到端 36 项）、`npm run selftest:plugin`（DSH 插件 28 项，
+  其中会用 DSH 自带的 schema 校验器校验工具契约）、`npm run selftest:bridge`（桥接单元 13 项）。
+- 设计/决策文档：`docs/agent-bridge-design.md`、`docs/adr/0004-external-agent-bridge.md`。
+
 ## v0.1.21（2026-09-16）—— 清单排序方向切换 + 小柴改成「直接执行」
 
 ### 新增：清单排序方向切换（新的在前 / 旧的在前）

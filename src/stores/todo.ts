@@ -118,7 +118,7 @@ export const useTodoStore = defineStore('todo', () => {
   }
 
   // 添加待办事项（支持完整字段；kind='NOTE' 时为笔记，不作为任务条目）
-  async function addTodo(data: { title: string; completed?: boolean; priority?: Todo['priority']; dueDate?: string; startDate?: string; content?: string; tags?: string[]; list?: string; isAllDay?: boolean; parentId?: string; kind?: 'TASK' | 'NOTE' }) {
+  async function addTodo(data: { title: string; completed?: boolean; priority?: Todo['priority']; dueDate?: string; startDate?: string; content?: string; tags?: string[]; list?: string; isAllDay?: boolean; parentId?: string; sourceId?: string; kind?: 'TASK' | 'NOTE' }) {
     loading.value = true
     error.value = null
     
@@ -135,6 +135,7 @@ export const useTodoStore = defineStore('todo', () => {
         list: data.list,
         isAllDay: data.isAllDay,
         parentId: data.parentId,
+        sourceId: data.sourceId,
         kind: data.kind ?? 'TASK',
         createdAt: new Date().toISOString(),
       })

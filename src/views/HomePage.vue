@@ -286,6 +286,7 @@
 import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTodoStore, sortWithHierarchy, type Todo } from '../stores/todo'
+import { queryTasks } from '../services/task-query'
 import { storeToRefs } from 'pinia'
 import AppIcon from '../components/icons/AppIcon.vue'
 import EmptyState from '../components/EmptyState.vue'
@@ -426,53 +427,16 @@ const filteredTodos = computed(() => {
     return applyCollapse(sortWithHierarchy(todos.value.filter(t => t.title.toLowerCase().includes(query)), sortOrder.value))
   }
 
-  // 其他视图按视图过滤（不受搜索词影响）；笔记（kind=NOTE）不进任务列表
-  let list = todos.value.filter(t => t.kind !== 'NOTE')
+  // 其他视图：与外部助手（本地 API → CLI → DSH 插件）共用同一份查询语义（services/task-query.ts），
+  // 避免两处各写一套过滤规则而逐渐漂移。
+  // 今天/最近7天含已完成（由 displayRows 分组显示）；收集箱只看未完成；笔记不进任务列表。
+  const tasks = queryTasks(todos.value, {
+    view: currentView.value as 'inbox' | 'today' | 'next7',
+    order: sortOrder.value,
+  })
 
-  // 按视图过滤（使用本地日期，避免 UTC 跨日错位）
-  const todayStr = toLocalDateStr(new Date())
-  const next7 = new Date()
-  next7.setDate(next7.getDate() + 7)
-  const next7Str = toLocalDateStr(next7)
-
-  let isDateView = false
-  switch (currentView.value) {
-    case 'today':
-      isDateView = true
-      // 今天视图：含未完成 + 已完成（由 displayRows 分组显示）
-      list = list.filter(t => t.dueDate && t.dueDate.startsWith(todayStr))
-      break
-    case 'next7':
-      isDateView = true
-      list = list.filter(t => {
-        if (!t.dueDate) return false
-        return t.dueDate >= todayStr && t.dueDate <= next7Str
-      })
-      break
-    default:
-      list = list.filter(t => !t.completed)
-  }
-
-  // 日期视图：子任务跟随父任务（递归）——父任务在过滤结果中时，其后代
-  // 全部一并显示（即使子任务自身无日期或日期不同），避免“创建了子任务
-  // 却在今天/最近7天里看不到”
-  if (isDateView) {
-    const ids = new Set(list.map(t => t.id))
-    let changed = true
-    while (changed) {
-      changed = false
-      for (const t of todos.value) {
-        if (t.parentId && ids.has(t.parentId) && !ids.has(t.id)) {
-          ids.add(t.id)
-          list.push(t)
-          changed = true
-        }
-      }
-    }
-  }
-
-  // 层级排序 + 折叠过滤：父任务在前，子任务紧跟其后（未展开时隐藏）
-  return applyCollapse(sortWithHierarchy(list, sortOrder.value))
+  // 折叠过滤：父任务在前、子任务紧跟其后，未展开时隐藏子任务
+  return applyCollapse(tasks)
 })
 
 // ============ 今天/最近7天视图分组（未完成 / 已完成） ============
