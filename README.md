@@ -38,7 +38,10 @@ TinyDo 是一款对标滴答清单的个人任务管理工具，支持多平台�
 
 **客户端（`tinydo` CLI + DSH 插件 + 客户端库）在独立仓库：**
 [rayliu445/tinydo-agent](https://github.com/rayliu445/tinydo-agent) —— 它只依赖本接口，不依赖本仓库代码。
-接口契约见 `docs/agent-bridge-design.md`；两边各自独立发版。
+
+能力：任务读写 / 拆解子任务 / 改期改优先级 / 批量整理 / **排期（reschedule）** / **撤销（undo）** /
+**清单·标签总览** / **笔记读写（含归档）** / 统计 / 审计。接口契约见 `docs/agent-bridge-design.md`
+（任务域自 `api 1`，扩展能力需 `api 2`，即本版本起）；两边各自独立发版。
 
 ```bash
 # 命令行（人 / 脚本 / 任意 Agent 都能用；装在 tinydo-agent 里）
@@ -48,7 +51,7 @@ npx github:rayliu445/tinydo-agent doctor           # App / 端口 / token / 数�
 
 # DSH 原生工具（9 个 tinydo_*，安装后重启 DSH）
 cd ~/.dsh/profiles/web
-pnpm add github:rayliu445/tinydo-agent#v0.1.0
+pnpm add github:rayliu445/tinydo-agent#v0.1.1
 # 把 "tinydo-agent" 加进 dsh.profile.bundles
 
 # 本仓库自检（App 侧，自包含、不依赖客户端代码）

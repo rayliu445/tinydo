@@ -155,6 +155,23 @@ export const useTodoStore = defineStore('todo', () => {
     }
   }
 
+  // 批量更新（外部助手 / 撤销用）：底层只通知一次，避免逐条刷新
+  async function bulkUpdateTodos(updates: Array<Partial<Todo> & { id: string }>): Promise<number> {
+    try {
+      const da = getDA()
+      const count = da.bulkUpdateTodos(updates)
+      if (count > 0) {
+        refreshTodos()
+        getSyncEngine().scheduleWrite()
+      }
+      return count
+    } catch (err) {
+      console.error('批量更新失败:', err)
+      error.value = err instanceof Error ? err.message : '批量更新失败'
+      return 0
+    }
+  }
+
   // 更新待办事项
   async function updateTodo(id: string, updates: Partial<Todo>) {
     loading.value = true
@@ -458,6 +475,7 @@ export const useTodoStore = defineStore('todo', () => {
     fetchTodos,
     addTodo,
     updateTodo,
+    bulkUpdateTodos,
     toggleTodo,
     removeTodo,
     bulkAddTodos,

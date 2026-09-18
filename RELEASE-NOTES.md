@@ -1,5 +1,34 @@
 # TinyDo - 发布说明
 
+## v0.1.23（2026-09-18）—— 外部助手扩展：排期 / 撤销 / 批量整理 / 总览 / 笔记
+
+配套客户端：**tinydo-agent v0.1.1**（`pnpm add github:rayliu445/tinydo-agent#v0.1.1`）
+
+### 新增接口（协议 `api 2`，`GET /health` 可查）
+
+- `GET /v1/overview`：清单 / 标签总览（未完成、逾期、已完成、未分配计数 + 笔记数）
+- `POST /v1/tasks/bulk-update`：批量改字段（≤50，一次刷新 + 一次同步调度，避免逐条刷全量）
+- `POST /v1/tasks/restore`：按完整快照还原任务，**可命中已软删除的 tombstone**（撤销删除的关键）
+- `GET/POST /v1/notes`、`PATCH/DELETE /v1/notes/:id`：笔记读写（归档 = 标记完成，与 App 语义一致；
+  笔记可搜正文，且不出现在任务列表里）
+
+### 新增：结构化撤销载荷
+
+审计条目带上 `undo` 字段（`delete_tasks` / `restore_fields` / `restore_tasks` + 字段快照），
+客户端据此实现"撤销刚才那次写入"：新增→删掉、修改/完成→写回旧值、删除→整体还原。
+快照超过 200 条时标记 `truncated`，客户端会拒绝自动撤销而不是做一半。撤销本身也写审计，再撤一次即 redo。
+
+### 配套客户端（tinydo-agent v0.1.1）新增 7 个工具
+
+`tinydo_overview` / `tinydo_reschedule` / `tinydo_bulk_update` / `tinydo_undo` /
+`tinydo_list_notes` / `tinydo_add_note` / `tinydo_update_note`（共 16 个），CLI 同步新增
+`overview` / `reschedule` / `undo` / `bulk update` / `notes` / `note add|edit|rm`。
+老 App（api 1）调用扩展工具时会得到"请升级 TinyDo"的明确提示，其余能力不受影响。
+
+### 修复
+
+- `electron/local-api.js` 纳入打包白名单（`build.files`）——漏掉会导致打包版主进程 `require` 失败。
+
 ## v0.1.22（2026-09-18）—— 外部助手：让 DSH / CLI 直接驱动 TinyDo
 
 ### 新增：外部助手（本地桥接接口 + tinydo CLI + DSH 原生工具）

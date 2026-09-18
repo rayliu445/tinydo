@@ -16,7 +16,7 @@ import path from 'node:path'
 
 const PORT_FILE = process.env.TINYDO_API_PORT_FILE || path.join(os.homedir(), '.tinydo', 'local-api.json')
 const TAG = `contract-${Date.now().toString(36)}`
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = 2
 
 let pass = 0
 let failed = 0
@@ -132,7 +132,84 @@ async function main() {
   const after = await api('GET', `/v1/tasks?view=all&search=${encodeURIComponent(TAG)}`)
   check('删除后查不到', !(after.body.tasks || []).some((t) => t.id === pid || t.id === child.body.task.id))
 
-  console.log('\n6. 清理')
+  console.log('\n6. 扩展能力：总览 / 批量更新 / 撤销载荷 / 还原 / 笔记（协议 api 2）')
+  // 6.1 清单 / 标签总览
+  const tagged = await api('POST', '/v1/tasks', {
+    title: `${TAG} 带清单标签`, list: '工作', tags: ['周报'], dueDate: localDate(-1),
+  })
+  created.push(tagged.body.task.id)
+  const ov = await api('GET', '/v1/overview')
+  check('overview 返回清单/标签聚合', Array.isArray(ov.body.lists) && Array.isArray(ov.body.tags)
+    && ov.body.lists.some((l) => l.name === '工作' && l.pending >= 1 && l.overdue >= 1)
+    && ov.body.tags.some((t) => t.name === '周报' && t.pending >= 1))
+  check('overview 含笔记计数', typeof ov.body.notes?.active === 'number' && typeof ov.body.notes?.archived === 'number')
+
+  // 6.2 批量更新（一次刷新改多条）
+  const bulkA = await api('POST', '/v1/tasks', { title: `${TAG} 批量甲` })
+  const bulkB = await api('POST', '/v1/tasks', { title: `${TAG} 批量乙` })
+  created.push(bulkA.body.task.id, bulkB.body.task.id)
+  const bulkUpd = await api('POST', '/v1/tasks/bulk-update', {
+    updates: [
+      { id: bulkA.body.task.id, priority: 5, tags: ['批量'] },
+      { id: bulkB.body.task.id, dueDate: localDate(3) },
+    ],
+  })
+  check('bulk-update 一次改多条', bulkUpd.body.updated === 2 && bulkUpd.body.results.length === 2)
+  const bulkAafter = await api('GET', `/v1/tasks/${bulkA.body.task.id}`)
+  check('bulk-update 字段生效', bulkAafter.body.task.priority === 5 && bulkAafter.body.task.tags.includes('批量'))
+  const bulkBad = await api('POST', '/v1/tasks/bulk-update', { updates: [{ id: 'todo_nope', priority: 5 }] })
+  check('bulk-update 对不存在的 id 逐条报错', bulkBad.body.updated === 0 && !!bulkBad.body.results[0]?.error)
+
+  // 6.3 审计里的结构化撤销载荷
+  const audit2 = await api('GET', '/v1/audit?limit=30')
+  const entries = audit2.body.entries || []
+  check('审计带结构化 undo：新增一条', entries.some((e) => e.undo?.op === 'delete_tasks' && (e.undo.ids || []).length > 0))
+  check('审计带结构化 undo：批量改字段', entries.some((e) => e.undo?.op === 'restore_fields' && Array.isArray(e.undo.before) && e.undo.before.length > 0))
+
+  // 6.4 删除 → 用审计快照还原
+  const victim = await api('POST', '/v1/tasks', {
+    title: `${TAG} 待还原`, dueDate: localDate(1), priority: 3, tags: ['还原'], content: '快照测试',
+  })
+  const victimId = victim.body.task.id
+  const victimDel = await api('DELETE', `/v1/tasks/${victimId}`)
+  check('删除任务', victimDel.body.deleted?.includes(victimId))
+  const gone = await api('GET', `/v1/tasks/${victimId}`)
+  check('删除后查询 404', gone.status === 404)
+  const audit3 = await api('GET', '/v1/audit?limit=5')
+  const undoPayload = (audit3.body.entries || []).find((e) => e.action === 'delete_task' && (e.taskIds || []).includes(victimId))?.undo
+  check('删除的审计载荷含完整快照', undoPayload?.op === 'restore_tasks' && undoPayload.before?.[0]?.id === victimId
+    && undoPayload.before[0].title === `${TAG} 待还原`
+    && undoPayload.before[0].content === '快照测试'
+    && Array.isArray(undoPayload.before[0].tags))
+  const restored = await api('POST', '/v1/tasks/restore', { tasks: undoPayload.before })
+  check('restore 还原软删除任务', restored.body.restored >= 1)
+  const back = await api('GET', `/v1/tasks/${victimId}`)
+  check('还原后字段保留', back.status === 200 && back.body.task.title === `${TAG} 待还原`
+    && back.body.task.content === '快照测试' && back.body.task.tags.includes('还原'))
+  created.push(victimId)
+
+  // 6.5 笔记（kind=NOTE）：不进任务列表，独立归档语义
+  const note = await api('POST', '/v1/notes', { title: `${TAG} 随想`, content: '第一版内容' })
+  const noteId = note.body.note?.id
+  check('新增笔记（kind=NOTE）', note.status === 200 && note.body.note.kind === 'NOTE', JSON.stringify(note.body).slice(0, 120))
+  const activeNotes = await api('GET', '/v1/notes')
+  check('未归档笔记列表包含它', (activeNotes.body.notes || []).some((n) => n.id === noteId))
+  const noteSearch = await api('GET', `/v1/notes?search=${encodeURIComponent('第一版')}`)
+  check('笔记可搜内容（不只是标题）', (noteSearch.body.notes || []).some((n) => n.id === noteId))
+  const noteUpd = await api('PATCH', `/v1/notes/${noteId}`, { content: '第二版内容', archived: true })
+  check('更新内容并归档', noteUpd.body.note.completed === true && noteUpd.body.note.content === '第二版内容')
+  const archivedNotes = await api('GET', '/v1/notes?archived=1')
+  check('归档列表包含它', (archivedNotes.body.notes || []).some((n) => n.id === noteId && n.completed === true))
+  const activeAfter = await api('GET', '/v1/notes')
+  check('归档后不在未归档列表', !(activeAfter.body.notes || []).some((n) => n.id === noteId))
+  const tasksAll = await api('GET', '/v1/tasks?view=all')
+  check('笔记不进任务列表', !(tasksAll.body.tasks || []).some((t) => t.id === noteId))
+  const note404 = await api('PATCH', '/v1/notes/todo_not_exist', { content: 'x' })
+  check('不存在的笔记 → 404 NOTE_NOT_FOUND', note404.status === 404 && note404.body.error?.code === 'NOTE_NOT_FOUND')
+  const noteDel = await api('DELETE', `/v1/notes/${noteId}`)
+  check('删除笔记', noteDel.status === 200 && noteDel.body.deleted?.includes(noteId))
+
+  console.log('\n7. 清理')
   let cleaned = 0
   for (const id of created) {
     const res = await api('DELETE', `/v1/tasks/${id}`)

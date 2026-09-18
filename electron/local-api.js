@@ -21,7 +21,7 @@ const PORT_FILE = process.env.TINYDO_API_PORT_FILE || path.join(TINYDO_HOME, 'lo
 const AUDIT_FILE = process.env.TINYDO_API_AUDIT_FILE || path.join(TINYDO_HOME, 'audit.jsonl')
 const PREFERRED_PORT = Number(process.env.TINYDO_API_PORT || 45871)
 /** 本地桥接协议版本：外部客户端（tinydo-agent 仓库的 CLI / DSH 插件）据此判断兼容性 */
-const PROTOCOL_VERSION = 1
+const PROTOCOL_VERSION = 2
 const MAX_BODY_BYTES = 1024 * 1024
 const FORWARD_TIMEOUT_MS = 15000
 const AUDIT_MAX_BYTES = 4 * 1024 * 1024

@@ -9,7 +9,7 @@
 
 import { useTodoStore, type Todo } from '../stores/todo'
 import { useSettingsStore } from '../stores/settings'
-import { queryTasks, type TaskView } from './task-query'
+import { queryTasks, queryNotes, type TaskView } from './task-query'
 
 export interface LocalApiRequest {
   id: string
@@ -20,11 +20,27 @@ export interface LocalApiRequest {
   actor: string
 }
 
+/**
+ * 审计条目。
+ * `undo` 是给「撤销」用的结构化反向载荷（见 docs/agent-bridge-design.md 的协议契约）：
+ * - `{ op: 'delete_tasks', ids }`                          ← 撤销「新增」
+ * - `{ op: 'restore_fields', before: [snapshot] }`         ← 撤销「修改 / 完成」
+ * - `{ op: 'restore_tasks', before: [snapshot] }`          ← 撤销「删除」（含软删除标记）
+ * snapshot 是任务完整字段快照（含 deleted），条数超过上限时带 `truncated: true`（不可撤销）。
+ */
+export interface LocalApiUndo {
+  op: 'delete_tasks' | 'restore_fields' | 'restore_tasks'
+  ids?: string[]
+  before?: any[]
+  truncated?: boolean
+}
+
 export interface LocalApiAudit {
   action: string
   taskIds: string[]
   summary: string
   ok: boolean
+  undo?: LocalApiUndo
 }
 
 export interface LocalApiResponse {
@@ -127,6 +143,37 @@ function findTask(id: string): Todo | undefined {
   return (useTodoStore().todos as Todo[]).find(t => t.id === id)
 }
 
+/** 撤销载荷里最多带多少条快照（超过则标记 truncated，撤销会拒绝执行而不是做一半） */
+const UNDO_SNAPSHOT_LIMIT = 200
+
+/** 任务完整快照：撤销时按这个还原（含 deleted / completedTime / parentId） */
+function snapshot(t: Todo) {
+  return {
+    id: t.id,
+    title: t.title,
+    completed: !!t.completed,
+    priority: t.priority ?? 0,
+    dueDate: t.dueDate ?? null,
+    startDate: t.startDate ?? null,
+    parentId: t.parentId ?? null,
+    list: t.list ?? null,
+    tags: Array.isArray(t.tags) ? [...t.tags] : [],
+    content: t.content ?? null,
+    kind: t.kind ?? 'TASK',
+    deleted: !!t.deleted,
+    completedTime: t.completedTime ?? null,
+  }
+}
+
+function snapshotsOf(todos: Todo[], ids: string[]): { before: any[]; truncated?: boolean } {
+  const byId = new Map(todos.map(t => [t.id, t]))
+  const picked = ids.map(id => byId.get(id)).filter(Boolean) as Todo[]
+  if (picked.length > UNDO_SNAPSHOT_LIMIT) {
+    return { before: [], truncated: true }
+  }
+  return { before: picked.map(snapshot) }
+}
+
 // ============ 各操作 ============
 
 function listTasks(q: Record<string, string>): LocalApiResponse {
@@ -226,6 +273,7 @@ async function createTask(body: any, actor: string): Promise<LocalApiResponse> {
         ? `${actor} 在「${parent.title}」下新增子任务「${title}」`
         : `${actor} 新增任务「${title}」`,
       ok: true,
+      undo: { op: 'delete_tasks', ids: [(created as Todo).id] },
     },
   )
 }
@@ -292,11 +340,18 @@ async function updateTask(id: string, body: any): Promise<LocalApiResponse> {
 
   if (changed.length === 0) return ok({ task: toDto(before), changed: [] })
 
+  const undo = snapshotsOf(todoStore.todos as Todo[], [id])
   await todoStore.updateTodo(id, updates as Partial<Todo>)
   const after = findTask(id)
   return ok(
     { task: after ? toDto(after) : null, changed },
-    { action: 'update_task', taskIds: [id], summary: `${before.title}：${changed.join('；')}`, ok: true },
+    {
+      action: 'update_task',
+      taskIds: [id],
+      summary: `${before.title}：${changed.join('；')}`,
+      ok: true,
+      undo: { op: 'restore_fields', ...undo },
+    },
   )
 }
 
@@ -306,19 +361,22 @@ async function completeTask(id: string, body: any): Promise<LocalApiResponse> {
   if (!task) return fail(404, 'TASK_NOT_FOUND', `任务不存在：${id}`)
   const target = typeof body?.completed === 'boolean' ? body.completed : true
   const descendants = collectDescendants(todoStore.todos as Todo[], id)
+  const affected = [id, ...descendants]
 
   if (task.completed === target) {
-    return ok({ task: toDto(task), affected: [id, ...descendants], changed: false })
+    return ok({ task: toDto(task), affected, changed: false })
   }
+  const undo = snapshotsOf(todoStore.todos as Todo[], affected)
   await todoStore.toggleTodo(id) // 与 UI 勾选一致：级联所有后代
   const after = findTask(id)
   return ok(
-    { task: after ? toDto(after) : null, affected: [id, ...descendants], changed: true },
+    { task: after ? toDto(after) : null, affected, changed: true },
     {
       action: target ? 'complete_task' : 'uncomplete_task',
-      taskIds: [id, ...descendants],
+      taskIds: affected,
       summary: `${target ? '完成' : '取消完成'}「${task.title}」${descendants.length ? `（含 ${descendants.length} 个子任务）` : ''}`,
       ok: true,
+      undo: { op: 'restore_fields', ...undo },
     },
   )
 }
@@ -328,15 +386,18 @@ async function deleteTask(id: string): Promise<LocalApiResponse> {
   const task = findTask(id)
   if (!task) return fail(404, 'TASK_NOT_FOUND', `任务不存在：${id}`)
   const descendants = collectDescendants(todoStore.todos as Todo[], id)
+  const affected = [id, ...descendants]
 
+  const undo = snapshotsOf(todoStore.todos as Todo[], affected)
   await todoStore.removeTodo(id) // 软删除 + 级联后代
   return ok(
-    { deleted: [id, ...descendants] },
+    { deleted: affected },
     {
       action: 'delete_task',
-      taskIds: [id, ...descendants],
+      taskIds: affected,
       summary: `删除「${task.title}」${descendants.length ? `（含 ${descendants.length} 个子任务）` : ''}`,
       ok: true,
+      undo: { op: 'restore_tasks', ...undo },
     },
   )
 }
@@ -379,7 +440,286 @@ async function bulkTasks(body: any, actor: string): Promise<LocalApiResponse> {
           taskIds: createdIds,
           summary: `${actor} 批量新增 ${createdIds.length} 条${failed ? `（${failed} 条失败）` : ''}`,
           ok: failed === 0,
+          undo: { op: 'delete_tasks', ids: createdIds },
         },
+  )
+}
+
+/**
+ * 批量更新（≤50 条）：一次刷新、一次同步调度。
+ * 用于「给这些任务都打上标签 / 都挪到某天 / 都改成高优先级」这类批量整理。
+ */
+async function bulkUpdateTasks(body: any): Promise<LocalApiResponse> {
+  const updates = Array.isArray(body?.updates) ? body.updates : null
+  if (!updates) return fail(400, 'BAD_REQUEST', 'updates 需为数组')
+  if (updates.length === 0) return fail(400, 'BAD_REQUEST', 'updates 不能为空')
+  if (updates.length > 50) return fail(400, 'BAD_REQUEST', `单次批量上限 50 条（收到 ${updates.length}）`)
+
+  const todoStore = useTodoStore()
+  const prepared: Array<Partial<Todo> & { id: string }> = []
+  const results: Array<{ id: string; changed: string[]; error?: string }> = []
+  const beforeSnapshots: any[] = []
+
+  for (const item of updates) {
+    const id = typeof item?.id === 'string' ? item.id : ''
+    const current = id ? findTask(id) : undefined
+    if (!current) {
+      results.push({ id, changed: [], error: `任务不存在：${id || '(空 id)'}` })
+      continue
+    }
+    const fields: Record<string, any> = {}
+    const changed: string[] = []
+    if (item.dueDate !== undefined) {
+      const next = normalizeDate(item.dueDate)
+      if (next === undefined) { results.push({ id, changed: [], error: `dueDate 非法：${item.dueDate}` }); continue }
+      if (next !== (current.dueDate ?? null)) { fields.dueDate = next; changed.push('dueDate') }
+    }
+    if (item.priority !== undefined) {
+      const priority = normalizePriority(item.priority)
+      if (priority === undefined) { results.push({ id, changed: [], error: `priority 非法：${item.priority}` }); continue }
+      if (priority !== current.priority) { fields.priority = priority; changed.push('priority') }
+    }
+    if (item.tags !== undefined) {
+      const tags = normalizeTags(item.tags)
+      if (tags === undefined) { results.push({ id, changed: [], error: 'tags 需为数组或逗号分隔字符串' }); continue }
+      if (JSON.stringify(tags) !== JSON.stringify(current.tags ?? [])) { fields.tags = tags; changed.push('tags') }
+    }
+    if (item.list !== undefined) {
+      const list = item.list === null ? null : String(item.list)
+      if (list !== (current.list ?? null)) { fields.list = list; changed.push('list') }
+    }
+    if (item.completed !== undefined) {
+      const completed = !!item.completed
+      if (completed !== current.completed) {
+        fields.completed = completed
+        fields.completedTime = completed ? new Date().toISOString() : null
+        changed.push('completed')
+      }
+    }
+    beforeSnapshots.push(snapshot(current))
+    results.push({ id, changed })
+    if (changed.length > 0) prepared.push({ id, ...fields })
+  }
+
+  const applied = prepared.length > 0 ? await todoStore.bulkUpdateTodos(prepared) : 0
+  return ok(
+    { results, updated: applied, skipped: results.filter(r => r.error || r.changed.length === 0).length },
+    {
+      action: 'bulk_update_tasks',
+      taskIds: prepared.map(p => p.id),
+      summary: `批量更新 ${applied} 条（${results.filter(r => r.error).length} 条失败）`,
+      ok: results.every(r => !r.error),
+      undo: { op: 'restore_fields', before: beforeSnapshots },
+    },
+  )
+}
+
+/**
+ * 还原任务（撤销用）：接受完整快照，按快照写回字段并清掉软删除标记。
+ * 与 PATCH 的区别：能命中 tombstone（已删除的任务），因此可以撤销删除。
+ */
+async function restoreTasks(body: any): Promise<LocalApiResponse> {
+  const tasks = Array.isArray(body?.tasks) ? body.tasks : null
+  if (!tasks) return fail(400, 'BAD_REQUEST', 'tasks 需为快照数组')
+  if (tasks.length === 0) return fail(400, 'BAD_REQUEST', 'tasks 不能为空')
+  if (tasks.length > UNDO_SNAPSHOT_LIMIT) {
+    return fail(400, 'BAD_REQUEST', `单次还原上限 ${UNDO_SNAPSHOT_LIMIT} 条（收到 ${tasks.length}）`)
+  }
+
+  const todoStore = useTodoStore()
+  const payloads: Array<Partial<Todo> & { id: string }> = []
+  const restored: string[] = []
+
+  for (const item of tasks) {
+    const id = typeof item?.id === 'string' ? item.id : ''
+    if (!id) continue
+    const fields: Record<string, any> = { deleted: false }
+    if (typeof item.title === 'string' && item.title.trim()) fields.title = item.title.trim()
+    if (item.priority !== undefined) {
+      const priority = normalizePriority(item.priority)
+      if (priority !== undefined) fields.priority = priority
+    }
+    for (const key of ['dueDate', 'startDate', 'completedTime'] as const) {
+      if (item[key] !== undefined) {
+        const next = normalizeDate(item[key])
+        if (next !== undefined) fields[key] = next
+      }
+    }
+    if (item.parentId !== undefined) fields.parentId = item.parentId || null
+    if (item.list !== undefined) fields.list = item.list ?? null
+    if (item.tags !== undefined) {
+      const tags = normalizeTags(item.tags)
+      if (tags !== undefined) fields.tags = tags
+    }
+    if (item.content !== undefined) fields.content = item.content ?? null
+    if (typeof item.completed === 'boolean') fields.completed = item.completed
+    if (item.kind === 'NOTE' || item.kind === 'TASK') fields.kind = item.kind
+    payloads.push({ id, ...fields })
+    restored.push(id)
+  }
+
+  const applied = await todoStore.bulkUpdateTodos(payloads)
+  return ok(
+    { restored: applied, ids: restored },
+    {
+      action: 'restore_tasks',
+      taskIds: restored,
+      summary: `还原 ${applied} 条任务`,
+      ok: applied > 0,
+    },
+  )
+}
+
+/** 清单 / 标签总览：聚合未完成、逾期、已完成数量（供 Agent 做"按清单梳理"） */
+function overview(): LocalApiResponse {
+  const { todos } = useTodoStore()
+  const today = (() => {
+    const d = new Date()
+    const pad = (n: number) => String(n).padStart(2, '0')
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  })()
+  const tasks = (todos as Todo[]).filter(t => t.kind !== 'NOTE' && !t.deleted)
+
+  type Bucket = { name: string; pending: number; overdue: number; completed: number; total: number }
+  const bump = (map: Map<string, Bucket>, name: string, t: Todo) => {
+    const bucket = map.get(name) ?? { name, pending: 0, overdue: 0, completed: 0, total: 0 }
+    bucket.total++
+    if (t.completed) bucket.completed++
+    else {
+      bucket.pending++
+      if (t.dueDate && t.dueDate.slice(0, 10) < today) bucket.overdue++
+    }
+    map.set(name, bucket)
+  }
+
+  const lists = new Map<string, Bucket>()
+  const tags = new Map<string, Bucket>()
+  let unassignedPending = 0
+  let untaggedPending = 0
+  for (const t of tasks) {
+    bump(lists, t.list || '（无清单）', t)
+    if ((t.tags ?? []).length === 0) bump(tags, '（无标签）', t)
+    for (const tag of t.tags ?? []) bump(tags, tag, t)
+    if (!t.list && !t.completed) unassignedPending++
+    if (!(t.tags ?? []).length && !t.completed) untaggedPending++
+  }
+
+  const sortBuckets = (map: Map<string, Bucket>) =>
+    [...map.values()].sort((a, b) => b.pending - a.pending || b.total - a.total || a.name.localeCompare(b.name))
+
+  const notes = (todos as Todo[]).filter(t => t.kind === 'NOTE' && !t.deleted)
+  return ok({
+    lists: sortBuckets(lists),
+    tags: sortBuckets(tags),
+    unassignedPending,
+    untaggedPending,
+    notes: {
+      active: notes.filter(t => !t.completed).length,
+      archived: notes.filter(t => t.completed).length,
+    },
+  })
+}
+
+// ============ 笔记 ============
+
+function listNotes(q: Record<string, string>): LocalApiResponse {
+  const { todos } = useTodoStore()
+  const archived = q.archived === '1' || q.archived === 'true' ? true
+    : q.archived === 'all' ? 'all' as const : false
+  const limit = q.limit ? Number(q.limit) : 100
+  if (q.limit && (!Number.isFinite(limit) || limit <= 0)) {
+    return fail(400, 'BAD_REQUEST', `limit 非法：${q.limit}`)
+  }
+  const notes = queryNotes(todos as Todo[], { archived, search: q.search, limit: Math.min(limit, 500) })
+  return ok({ notes: notes.map(toDto), total: notes.length, archived })
+}
+
+async function createNote(body: any, actor: string): Promise<LocalApiResponse> {
+  const todoStore = useTodoStore()
+  const title = typeof body?.title === 'string' ? body.title.trim() : ''
+  if (!title) return fail(400, 'BAD_REQUEST', 'title 不能为空（笔记标题）')
+  if (title.length > 500) return fail(400, 'BAD_REQUEST', 'title 过长（上限 500 字）')
+
+  const created = await todoStore.addTodo({
+    title,
+    content: typeof body.content === 'string' ? body.content : undefined,
+    tags: normalizeTags(body.tags),
+    kind: 'NOTE',
+  })
+  if (!created) return fail(500, 'INTERNAL', '新增笔记失败（数据层未就绪）')
+  return ok(
+    { note: toDto(created as Todo) },
+    {
+      action: 'add_note',
+      taskIds: [(created as Todo).id],
+      summary: `${actor} 记了一条笔记「${title}」`,
+      ok: true,
+      undo: { op: 'delete_tasks', ids: [(created as Todo).id] },
+    },
+  )
+}
+
+async function updateNote(id: string, body: any): Promise<LocalApiResponse> {
+  const todoStore = useTodoStore()
+  const before = findTask(id)
+  if (!before || before.kind !== 'NOTE') return fail(404, 'NOTE_NOT_FOUND', `笔记不存在：${id}`)
+
+  const updates: Record<string, any> = {}
+  const changed: string[] = []
+  if (body.title !== undefined) {
+    const title = typeof body.title === 'string' ? body.title.trim() : ''
+    if (!title) return fail(400, 'BAD_REQUEST', 'title 不能为空')
+    if (title !== before.title) { updates.title = title; changed.push('title') }
+  }
+  if (body.content !== undefined) {
+    const content = typeof body.content === 'string' ? body.content : null
+    if (content !== (before.content ?? null)) { updates.content = content; changed.push('content') }
+  }
+  if (body.tags !== undefined) {
+    const tags = normalizeTags(body.tags)
+    if (tags === undefined) return fail(400, 'BAD_REQUEST', 'tags 需为数组或逗号分隔字符串')
+    if (JSON.stringify(tags) !== JSON.stringify(before.tags ?? [])) { updates.tags = tags; changed.push('tags') }
+  }
+  // 归档 = 标记完成（与 App 的笔记归档语义一致）
+  if (typeof body.archived === 'boolean' && body.archived !== before.completed) {
+    updates.completed = body.archived
+    updates.completedTime = body.archived ? new Date().toISOString() : null
+    changed.push(body.archived ? '归档' : '取消归档')
+  }
+
+  if (changed.length === 0) return ok({ note: toDto(before), changed: [] })
+
+  const undo = snapshotsOf(todoStore.todos as Todo[], [id])
+  await todoStore.updateTodo(id, updates as Partial<Todo>)
+  const after = findTask(id)
+  return ok(
+    { note: after ? toDto(after) : null, changed },
+    {
+      action: 'update_note',
+      taskIds: [id],
+      summary: `笔记「${before.title}」：${changed.join('；')}`,
+      ok: true,
+      undo: { op: 'restore_fields', ...undo },
+    },
+  )
+}
+
+async function deleteNote(id: string): Promise<LocalApiResponse> {
+  const todoStore = useTodoStore()
+  const note = findTask(id)
+  if (!note || note.kind !== 'NOTE') return fail(404, 'NOTE_NOT_FOUND', `笔记不存在：${id}`)
+
+  const undo = snapshotsOf(todoStore.todos as Todo[], [id])
+  await todoStore.removeTodo(id)
+  return ok(
+    { deleted: [id] },
+    {
+      action: 'delete_note',
+      taskIds: [id],
+      summary: `删除笔记「${note.title}」`,
+      ok: true,
+      undo: { op: 'restore_tasks', ...undo },
+    },
   )
 }
 
@@ -435,21 +775,50 @@ export async function handleLocalApiRequest(req: LocalApiRequest): Promise<Local
   const actor = req.actor || 'external'
 
   try {
+    const route = segments.join('/')
+
     // GET /v1/tasks
-    if (req.method === 'GET' && segments.join('/') === 'v1/tasks') {
+    if (req.method === 'GET' && route === 'v1/tasks') {
       return listTasks(req.query)
     }
     // POST /v1/tasks
-    if (req.method === 'POST' && segments.join('/') === 'v1/tasks') {
+    if (req.method === 'POST' && route === 'v1/tasks') {
       return await createTask(req.body ?? {}, actor)
     }
-    // POST /v1/tasks/bulk
-    if (req.method === 'POST' && segments.join('/') === 'v1/tasks/bulk') {
+    // POST /v1/tasks/bulk（批量新增，≤50）
+    if (req.method === 'POST' && route === 'v1/tasks/bulk') {
       return await bulkTasks(req.body ?? {}, actor)
     }
+    // POST /v1/tasks/bulk-update（批量改字段，≤50，一次刷新）
+    if (req.method === 'POST' && route === 'v1/tasks/bulk-update') {
+      return await bulkUpdateTasks(req.body ?? {})
+    }
+    // POST /v1/tasks/restore（按快照还原，含已软删除的；撤销用）
+    if (req.method === 'POST' && route === 'v1/tasks/restore') {
+      return await restoreTasks(req.body ?? {})
+    }
     // GET /v1/stats
-    if (req.method === 'GET' && segments.join('/') === 'v1/stats') {
+    if (req.method === 'GET' && route === 'v1/stats') {
       return stats()
+    }
+    // GET /v1/overview（清单 / 标签聚合）
+    if (req.method === 'GET' && route === 'v1/overview') {
+      return overview()
+    }
+    // /v1/notes
+    if (req.method === 'GET' && route === 'v1/notes') {
+      return listNotes(req.query)
+    }
+    if (req.method === 'POST' && route === 'v1/notes') {
+      return await createNote(req.body ?? {}, actor)
+    }
+    // /v1/notes/:id
+    if (segments[0] === 'v1' && segments[1] === 'notes' && segments[2]) {
+      const noteId = decodeURIComponent(segments[2])
+      if (segments.length === 3 && (req.method === 'PATCH' || req.method === 'PUT')) {
+        return await updateNote(noteId, req.body ?? {})
+      }
+      if (segments.length === 3 && req.method === 'DELETE') return await deleteNote(noteId)
     }
     // /v1/tasks/:id
     if (segments[0] === 'v1' && segments[1] === 'tasks' && segments[2]) {
@@ -463,7 +832,7 @@ export async function handleLocalApiRequest(req: LocalApiRequest): Promise<Local
         return await completeTask(id, req.body ?? {})
       }
     }
-    return fail(404, 'NOT_FOUND', `未知接口：${req.method} /${segments.join('/')}`)
+    return fail(404, 'NOT_FOUND', `未知接口：${req.method} /${route}`)
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     console.error('[LocalAPI] 处理失败:', err)

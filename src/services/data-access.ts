@@ -49,6 +49,8 @@ export interface DataAccess {
   bulkAddTodos(todos: Partial<Todo>[]): Todo[]
   replaceAll(todos: Todo[]): void
   updateTodo(id: string, updates: Partial<Todo>): void
+  /** 批量更新：内部只通知一次（外部助手 / 撤销用） */
+  bulkUpdateTodos(updates: Array<Partial<Todo> & { id: string }>): number
   removeTodo(id: string): void
   toggleTodo(id: string): void
   getAiThreads(): AiThread[]
@@ -145,14 +147,23 @@ class SqliteDataAccess implements DataAccess {
   }
 
   updateTodo(id: string, updates: Partial<Todo>): void {
-    this.db.updateTodo(id, {
-      title: updates.title, completed: updates.completed, priority: updates.priority,
-      dueDate: updates.dueDate, startDate: updates.startDate, content: updates.content,
-      tags: updates.tags, list: updates.list, isAllDay: updates.isAllDay,
-      completedTime: updates.completedTime, parentId: updates.parentId,
-      sourceId: updates.sourceId, deleted: updates.deleted, kind: updates.kind,
-    })
+    this.db.updateTodo(id, toDbFields(updates))
     this.notify()
+  }
+
+  /**
+   * 批量更新（供外部助手 / 撤销等场景）：内部逐条写库，只通知一次，
+   * 避免逐条 updateTodo 触发 N 次全量刷新（1000+ 条时会明显卡顿）。
+   */
+  bulkUpdateTodos(updates: Array<Partial<Todo> & { id: string }>): number {
+    let count = 0
+    for (const item of updates) {
+      const { id, ...fields } = item
+      if (!id) continue
+      if (this.db.updateTodo(id, toDbFields(fields))) count++
+    }
+    if (count > 0) this.notify()
+    return count
   }
 
   removeTodo(id: string): void { this.db.removeTodo(id); this.notify() }
@@ -302,6 +313,17 @@ function idbWrite(key: string, data: Uint8Array): Promise<void> {
     }
     req.onerror = () => reject(req.error)
   })
+}
+
+/** Todo 字段 → 数据库列字段（update / bulkUpdate 共用，避免两处漂移） */
+function toDbFields(updates: Partial<Todo>) {
+  return {
+    title: updates.title, completed: updates.completed, priority: updates.priority,
+    dueDate: updates.dueDate, startDate: updates.startDate, content: updates.content,
+    tags: updates.tags, list: updates.list, isAllDay: updates.isAllDay,
+    completedTime: updates.completedTime, parentId: updates.parentId,
+    sourceId: updates.sourceId, deleted: updates.deleted, kind: updates.kind,
+  }
 }
 
 function rowToTodo(row: any): Todo {

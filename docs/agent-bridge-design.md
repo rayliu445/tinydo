@@ -135,6 +135,30 @@ Electron / 渲染层改动：
 | 409 | `CONFLICT` | 幂等命中（同时返回既有任务） |
 | 503 | `DATA_NOT_READY` | 数据层尚未初始化（启动瞬间），客户端指数退避重试 |
 
+### 4.1 扩展接口（协议 `api 2`，TinyDo ≥ 0.1.23）
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| GET | `/v1/overview` | 清单 / 标签聚合：`[{name, pending, overdue, completed, total}]` + 未归清单/无标签计数 + 笔记数 |
+| POST | `/v1/tasks/bulk-update` | 批量改字段（≤50）：`{ updates: [{id, dueDate?, priority?, tags?, list?, completed?}] }`，**一次刷新、一次同步调度** |
+| POST | `/v1/tasks/restore` | 按完整快照还原（≤200，可命中已软删除的 tombstone）：`{ tasks: [snapshot] }` |
+| GET | `/v1/notes` | 笔记列表：`archived=0\|1\|all`、`search`（匹配标题+正文）、`limit` |
+| POST | `/v1/notes` | 新增笔记（`kind=NOTE`，不进任务列表） |
+| PATCH | `/v1/notes/:id` | 改标题 / 正文 / 标签 / `archived`（归档 = 标记完成） |
+| DELETE | `/v1/notes/:id` | 软删除笔记 |
+
+**结构化撤销载荷**：审计条目新增 `undo` 字段，供客户端实现"撤销刚才那次写入"：
+
+```json
+{ "op": "delete_tasks",   "ids": ["todo_…"] }              // 撤销「新增」：删掉刚建的
+{ "op": "restore_fields", "before": [{ /* 任务快照 */ }] }  // 撤销「修改/完成」：写回旧字段
+{ "op": "restore_tasks",  "before": [{ /* 任务快照 */ }] }  // 撤销「删除」：还原（含 tombstone）
+```
+
+快照含 `id/title/completed/priority/dueDate/startDate/parentId/list/tags/content/kind/deleted/completedTime`；
+超过 200 条时带 `truncated: true`（客户端应拒绝自动撤销而不是做一半）。
+撤销通过 `POST /v1/tasks/restore` 执行，因此**撤销本身也会产生审计条目**——再撤销一次就等价于 redo。
+
 ## 5. 发现、凭据与自动拉起
 
 - 文件：`~/.tinydo/local-api.json`，权限 `0600`：

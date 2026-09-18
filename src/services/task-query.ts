@@ -92,3 +92,35 @@ export function queryTasks(todos: Todo[], query: TaskQuery = {}): Todo[] {
   const sorted = sortWithHierarchy(list, order)
   return query.limit && query.limit > 0 ? sorted.slice(0, query.limit) : sorted
 }
+
+// ============ 笔记（kind = NOTE） ============
+
+export interface NoteQuery {
+  /** true=已归档（App 里归档 = 标记完成）；false=未归档；'all'=全部。默认 false */
+  archived?: boolean | 'all'
+  /** 关键词：匹配标题 + 内容 */
+  search?: string
+  limit?: number
+}
+
+/**
+ * 笔记查询（与 NotesView 语义一致）：
+ * - 未归档按创建时间倒序；已归档按「归档时间（completedTime）→ 创建时间」倒序
+ * - 笔记没有父子关系，不参与层级排序
+ */
+export function queryNotes(todos: Todo[], query: NoteQuery = {}): Todo[] {
+  let list = todos.filter(t => t.kind === 'NOTE')
+  if (query.archived === true) list = list.filter(t => t.completed)
+  else if (query.archived !== 'all') list = list.filter(t => !t.completed)
+
+  if (query.search?.trim()) {
+    const q = query.search.trim().toLowerCase()
+    list = list.filter(t =>
+      t.title.toLowerCase().includes(q) || (t.content ?? '').toLowerCase().includes(q))
+  }
+
+  const timeKey = (t: Todo) => (query.archived === true ? (t.completedTime || t.createdAt) : t.createdAt) || ''
+  const sorted = list.slice().sort((a, b) => timeKey(b).localeCompare(timeKey(a)))
+  const limit = query.limit && query.limit > 0 ? query.limit : 200
+  return sorted.slice(0, limit)
+}

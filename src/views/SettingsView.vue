@@ -431,7 +431,7 @@
           <div class="text-sm font-medium mb-2" :style="{ color: 'var(--text-primary)' }">在 DSH 里启用</div>
           <pre class="text-xs p-3 rounded-lg overflow-x-auto"
             :style="{ backgroundColor: 'var(--bg-app)', color: 'var(--text-secondary)' }">cd ~/.dsh/profiles/web
-pnpm add github:rayliu445/tinydo-agent#v0.1.0   # 本地开发用 pnpm add link:&lt;仓库路径&gt;</pre>
+pnpm add github:rayliu445/tinydo-agent#v0.1.1   # 本地开发用 pnpm add link:&lt;仓库路径&gt;</pre>
           <div class="text-xs mt-2 leading-relaxed" :style="{ color: 'var(--text-secondary)' }">
             客户端（CLI + 插件 + 客户端库）在独立仓库 <code>rayliu445/tinydo-agent</code>；
             安装后把 <code>tinydo-agent</code> 加进该 <code>package.json</code> 的
