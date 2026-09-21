@@ -40,7 +40,7 @@
           >
             ↳
           </span>
-          <!-- 折叠按钮（父任务有关联子任务时显示） -->
+          <!-- 折叠按钮（有关联子任务时可点击；无子任务时留同宽占位，保证同级复选框对齐） -->
           <button
             v-if="hasChildren(todo)"
             class="w-5 h-5 flex-shrink-0 flex items-center justify-center rounded cursor-pointer"
@@ -53,6 +53,7 @@
               :size="13"
             />
           </button>
+          <span v-else class="w-5 h-5 flex-shrink-0" aria-hidden="true"></span>
           <input
             type="checkbox"
             :checked="todo.completed"
