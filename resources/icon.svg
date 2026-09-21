@@ -1,51 +1,60 @@
 <svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- 背景：自带 squircle 圆角的圆角方形。
-       注意：不依赖 macOS 系统自动套圆角（部分系统/图标缓存不生效时会是方形），
-       所以这里直接在 PNG 里画好圆角，保证任何环境下显示都是圆润的。
-       圆角 rx≈25%（260px），四周留少量透明边距避免双重圆角突兀。 -->
-  <rect x="20" y="20" width="984" height="984" rx="260" fill="#FFFFFF"/>
-  <rect x="20" y="20" width="984" height="984" rx="260" fill="none" stroke="#EDE8E0" stroke-width="8"/>
+  <!-- 尺寸严格遵循 macOS 图标网格：1024 画布上「图形本体」824×824（四周各留 100px 透明边距），
+       圆角半径 185。原生 app 图标都是这个比例；如果画满整张画布（或只留十几像素边距），
+       在 Dock 里会比别的图标大一圈——Dock 因窗口变多而整体缩小时尤其明显。
 
-  <!-- 像素柴犬：放大更饱满（32 网格 × 18 = 576px，起点 224,224） -->
-  <g transform="translate(224 224) scale(18)" shape-rendering="crispEdges">
-    <!-- 左耳（棕） -->
-    <rect x="5" y="3" width="5" height="4" fill="#c8792f"/>
-    <rect x="4" y="7" width="7" height="2" fill="#c8792f"/>
-    <rect x="6" y="5" width="2" height="3" fill="#9c5a22"/>
-    <!-- 右耳（棕） -->
-    <rect x="22" y="3" width="5" height="4" fill="#c8792f"/>
-    <rect x="21" y="7" width="7" height="2" fill="#c8792f"/>
-    <rect x="24" y="5" width="2" height="3" fill="#9c5a22"/>
-    <!-- 头顶（棕） -->
-    <rect x="9" y="7" width="14" height="2" fill="#c8792f"/>
-    <!-- 脸颊（棕） -->
-    <rect x="8" y="8" width="16" height="1" fill="#c8792f"/>
-    <rect x="7" y="9" width="18" height="8" fill="#c8792f"/>
-    <!-- 白色眉毛点（暖米色） -->
-    <rect x="10" y="9" width="2" height="1" fill="#f3e6d3"/>
-    <rect x="20" y="9" width="2" height="1" fill="#f3e6d3"/>
-    <!-- 眼睛（黑） -->
-    <rect x="10" y="11" width="4" height="4" fill="#3b2a1a"/>
-    <rect x="18" y="11" width="4" height="4" fill="#3b2a1a"/>
-    <rect x="11" y="11" width="2" height="2" fill="#fff"/>
-    <rect x="19" y="11" width="2" height="2" fill="#fff"/>
-    <!-- 白色下巴/嘴部（暖米色） -->
-    <rect x="11" y="13" width="10" height="1" fill="#f3e6d3"/>
-    <rect x="10" y="14" width="12" height="2" fill="#f3e6d3"/>
-    <rect x="9" y="16" width="14" height="3" fill="#f3e6d3"/>
-    <rect x="8" y="19" width="16" height="3" fill="#f3e6d3"/>
-    <rect x="9" y="22" width="14" height="2" fill="#f3e6d3"/>
-    <rect x="11" y="24" width="10" height="1" fill="#f3e6d3"/>
-    <!-- 鼻子（黑） -->
-    <rect x="13" y="15" width="6" height="3" fill="#3b2a1a"/>
-    <!-- 嘴（黑） -->
-    <rect x="15" y="18" width="2" height="2" fill="#3b2a1a"/>
-    <rect x="12" y="20" width="8" height="1" fill="#3b2a1a"/>
-    <!-- 腮红（粉） -->
-    <rect x="7" y="14" width="2" height="2" fill="#ffb3a7" opacity="0.85"/>
-    <rect x="23" y="14" width="2" height="2" fill="#ffb3a7" opacity="0.85"/>
+       实现方式：图形仍按 1024 设计坐标系绘制（背景框 20..1004、rx 220.93），
+       再整体 translate(83.252) scale(0.837398) 落到网格上：
+         20 × 0.837398 + 83.252 = 100  →  图形外框正好 824
+         220.93 × 0.837398     ≈ 185   →  圆角正好是系统标准半径
+       图形自身画好圆角，不依赖系统套圆角（图标缓存异常时也不会变成方块）。 -->
+  <g transform="translate(83.252 83.252) scale(0.837398)">
+    <rect x="20" y="20" width="984" height="984" rx="220.93" fill="#FFFFFF"/>
+    <!-- 描边矩形内缩 4（= stroke-width/2），保证描边外沿与填充外沿重合、
+         图形总宽度正好落在 824 网格上，不会因描边向外多出几个像素 -->
+    <rect x="24" y="24" width="976" height="976" rx="216.93" fill="none" stroke="#EDE8E0" stroke-width="8"/>
+
+    <!-- 像素柴犬：放大更饱满（32 网格 × 18 = 576px，起点 224,224） -->
+    <g transform="translate(224 224) scale(18)" shape-rendering="crispEdges">
+      <!-- 左耳（棕） -->
+      <rect x="5" y="3" width="5" height="4" fill="#c8792f"/>
+      <rect x="4" y="7" width="7" height="2" fill="#c8792f"/>
+      <rect x="6" y="5" width="2" height="3" fill="#9c5a22"/>
+      <!-- 右耳（棕） -->
+      <rect x="22" y="3" width="5" height="4" fill="#c8792f"/>
+      <rect x="21" y="7" width="7" height="2" fill="#c8792f"/>
+      <rect x="24" y="5" width="2" height="3" fill="#9c5a22"/>
+      <!-- 头顶（棕） -->
+      <rect x="9" y="7" width="14" height="2" fill="#c8792f"/>
+      <!-- 脸颊（棕） -->
+      <rect x="8" y="8" width="16" height="1" fill="#c8792f"/>
+      <rect x="7" y="9" width="18" height="8" fill="#c8792f"/>
+      <!-- 白色眉毛点（暖米色） -->
+      <rect x="10" y="9" width="2" height="1" fill="#f3e6d3"/>
+      <rect x="20" y="9" width="2" height="1" fill="#f3e6d3"/>
+      <!-- 眼睛（黑） -->
+      <rect x="10" y="11" width="4" height="4" fill="#3b2a1a"/>
+      <rect x="18" y="11" width="4" height="4" fill="#3b2a1a"/>
+      <rect x="11" y="11" width="2" height="2" fill="#fff"/>
+      <rect x="19" y="11" width="2" height="2" fill="#fff"/>
+      <!-- 白色下巴/嘴部（暖米色） -->
+      <rect x="11" y="13" width="10" height="1" fill="#f3e6d3"/>
+      <rect x="10" y="14" width="12" height="2" fill="#f3e6d3"/>
+      <rect x="9" y="16" width="14" height="3" fill="#f3e6d3"/>
+      <rect x="8" y="19" width="16" height="3" fill="#f3e6d3"/>
+      <rect x="9" y="22" width="14" height="2" fill="#f3e6d3"/>
+      <rect x="11" y="24" width="10" height="1" fill="#f3e6d3"/>
+      <!-- 鼻子（黑） -->
+      <rect x="13" y="15" width="6" height="3" fill="#3b2a1a"/>
+      <!-- 嘴（黑） -->
+      <rect x="15" y="18" width="2" height="2" fill="#3b2a1a"/>
+      <rect x="12" y="20" width="8" height="1" fill="#3b2a1a"/>
+      <!-- 腮红（粉） -->
+      <rect x="7" y="14" width="2" height="2" fill="#ffb3a7" opacity="0.85"/>
+      <rect x="23" y="14" width="2" height="2" fill="#ffb3a7" opacity="0.85"/>
+    </g>
+
+    <!-- 右上角对勾：绿色（完成语义） -->
+    <path d="M712 320 l84 84 l168 -196" stroke="#22c55e" stroke-width="64" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
   </g>
-
-  <!-- 右上角对勾：绿色（完成语义） -->
-  <path d="M712 320 l84 84 l168 -196" stroke="#22c55e" stroke-width="64" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
 </svg>

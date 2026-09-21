@@ -2,7 +2,8 @@
 # ============================================
 # TinyDo - iOS AppIcon 生成脚本
 # 从桌面图标 resources/icon.png 生成 iOS AppIcon：
-#   - iOS 图标不允许 alpha 通道，把透明区域平铺到纯白背景
+#   - 桌面图标按 macOS 网格留白（1024 画布上图形 824），iOS 需全出血 → 先裁掉留白
+#   - iOS 图标不允许 alpha 通道，把剩余透明区域平铺到纯白背景
 #   - 产出 1024x1024 RGB（无 alpha）
 # 由于 ios/ 目录被 gitignore（cap add ios 本地生成），
 # 每次构建前用本脚本从跟踪的 resources/icon.png 重新生成，
@@ -47,8 +48,15 @@ from PIL import Image
 
 src_path, out_path = sys.argv[1], sys.argv[2]
 src = Image.open(src_path).convert("RGBA")
-# 平铺到纯白背景，去掉 alpha（iOS 图标不允许透明）
-bg = Image.new("RGBA", src.size, (255, 255, 255, 255))
+# resources/icon.png 按 macOS 图标网格制作（图形本体 824，四周各 100px 透明留白），
+# 而 iOS 图标必须全出血（系统自己套圆角，不允许留白/透明）：
+# 先裁掉不透明区域之外的留白，再缩放到 1024，最后平铺到纯白背景去掉 alpha。
+bbox = src.getbbox()
+if bbox:
+    src = src.crop(bbox)
+if src.size != (1024, 1024):
+    src = src.resize((1024, 1024), Image.LANCZOS)
+bg = Image.new("RGBA", (1024, 1024), (255, 255, 255, 255))
 out = Image.alpha_composite(bg, src).convert("RGB")
 out.save(out_path)
 print(f"✅ iOS AppIcon 生成完成: {out_path} ({out.size[0]}x{out.size[1]}, {out.mode})")
