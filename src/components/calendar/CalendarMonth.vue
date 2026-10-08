@@ -21,8 +21,12 @@
         :class="{
           'bg-base-200/50': !cell.isCurrentMonth,
           'bg-primary/5': cell.isToday,
+          'ring-2 ring-inset ring-primary bg-primary/10': dragOverDate === cell.dateStr,
         }"
         @click="$emit('add-todo', cell.dateStr)"
+        @dragover.prevent="dragOverDate = cell.dateStr"
+        @dragleave="clearDragOver(cell.dateStr)"
+        @drop.prevent="onDrop(cell.dateStr)"
       >
         <!-- 日期 -->
         <div class="flex items-center justify-between mb-1">
@@ -42,8 +46,11 @@
           <div
             v-for="todo in cell.todos"
             :key="todo.id"
-            class="text-xs px-1 py-0.5 rounded truncate flex items-center gap-1 cursor-pointer hover:opacity-80"
-            :class="getPriorityClass(todo.priority)"
+            class="text-xs px-1 py-0.5 rounded truncate flex items-center gap-1 cursor-grab active:cursor-grabbing hover:opacity-80"
+            :class="[getPriorityClass(todo.priority), { 'opacity-40': draggingId === todo.id }]"
+            draggable="true"
+            @dragstart="onDragStart($event, todo.id)"
+            @dragend="onDragEnd"
             @click.stop="$emit('toggle-todo', todo.id)"
           >
             <span :class="{ 'line-through': todo.completed }">
@@ -57,7 +64,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import type { Todo } from '../../stores/todo'
 
 const props = defineProps<{
@@ -65,11 +72,39 @@ const props = defineProps<{
   todos: Todo[]
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   (e: 'select-date', dateStr: string): void
   (e: 'add-todo', dateStr: string): void
   (e: 'toggle-todo', id: string): void
+  (e: 'move-todo', todoId: string, dateStr: string): void
 }>()
+
+// 拖拽改期：任务条目可拖动，日期格为放置目标（桌面端 HTML5 DnD）
+const draggingId = ref<string | null>(null)
+const dragOverDate = ref('')
+
+function onDragStart(e: DragEvent, todoId: string) {
+  draggingId.value = todoId
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move'
+    e.dataTransfer.setData('text/plain', todoId)
+  }
+}
+
+function onDragEnd() {
+  draggingId.value = null
+  dragOverDate.value = ''
+}
+
+function clearDragOver(dateStr: string) {
+  if (dragOverDate.value === dateStr) dragOverDate.value = ''
+}
+
+function onDrop(dateStr: string) {
+  const todoId = draggingId.value
+  onDragEnd()
+  if (todoId) emit('move-todo', todoId, dateStr)
+}
 
 const weekDays = ['日', '一', '二', '三', '四', '五', '六']
 

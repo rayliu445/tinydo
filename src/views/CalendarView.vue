@@ -60,6 +60,7 @@
       @select-date="selectDate"
       @add-todo="handleQuickAdd"
       @toggle-todo="handleToggleTodo"
+      @move-todo="handleMoveTodo"
     />
     <CalendarWeek
       v-else-if="viewMode === 'week'"
@@ -68,6 +69,7 @@
       @select-date="selectDate"
       @add-todo="handleQuickAdd"
       @toggle-todo="handleToggleTodo"
+      @move-todo="handleMoveTodo"
     />
     <CalendarDay
       v-else
@@ -300,6 +302,16 @@ function handleQuickAdd(dateStr: string) {
 
 function handleToggleTodo(id: string) {
   toggleTodo(id)
+}
+
+// 拖拽改期：只替换日期部分，保留原时间/时区（带时间的任务跨天拖动不丢时刻）
+function handleMoveTodo(todoId: string, dateStr: string) {
+  const t = todos.value.find(x => x.id === todoId)
+  if (!t) return
+  const old = t.dueDate ?? ''
+  const dueDate = old.length > 10 && old.charAt(10) === 'T' ? dateStr + old.slice(10) : dateStr
+  if (dueDate === old) return
+  void todoStore.updateTodo(todoId, { dueDate })
 }
 
 onMounted(() => {
