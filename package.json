@@ -1,6 +1,6 @@
 {
   "name": "tinydo",
-  "version": "0.1.26",
+  "version": "0.1.27",
   "scripts": {
     "dev": "vite",
     "stop": "kill $(lsof -ti:3000)",
@@ -95,6 +95,7 @@
       "electron/main.js",
       "electron/preload.js",
       "electron/local-api.js",
+      "resources/tray/**/*",
       "config.json"
     ],
     "dmg": {

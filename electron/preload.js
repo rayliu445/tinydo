@@ -19,6 +19,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ============ 数据目录 ============
   getDataPath: () => ipcRenderer.invoke('get-data-path'),
 
+  // ============ 状态栏图标（macOS 菜单栏 / Windows 托盘） ============
+  setTrayCount: (n) => ipcRenderer.invoke('tray:set-count', n),
+
   // ============ iCloud Drive 同步 ============
   getICloudPath: () => ipcRenderer.invoke('get-icloud-path'),
   readICloudFile: (relativePath) => ipcRenderer.invoke('read-icloud-file', relativePath),

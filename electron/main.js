@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron')
+const { app, BrowserWindow, ipcMain, dialog, Tray, Menu, MenuItem, nativeImage } = require('electron')
 const path = require('path')
 const fs = require('fs')
 const os = require('os')
@@ -737,9 +737,75 @@ ipcMain.handle('download-and-install', async (event, downloadUrl) => {
   }
 })
 
+// ============ 桌面状态栏图标（macOS 菜单栏 / Windows 任务栏托盘） ============
+// 对齐滴答清单：常驻小图标，左键呼出主窗口，右键菜单看今日待办计数、退出。
+let tray = null
+let trayTodayCount = 0
+let trayTodayItem = null
+
+function trayIconPath(rel) {
+  return path.join(app.getAppPath(), 'resources', rel)
+}
+
+function createTray() {
+  try {
+    let icon
+    if (process.platform === 'darwin') {
+      // 模板图标（纯黑+透明）：系统按菜单栏亮/暗自动反色，16px + @2x 自动取
+      icon = nativeImage.createFromPath(trayIconPath(path.join('tray', 'trayTemplate.png')))
+      icon.setTemplateImage(true)
+    } else {
+      // Windows 托盘用彩色应用图标缩到 16px（黑色模板图在深色任务栏会隐形）
+      icon = nativeImage.createFromPath(trayIconPath('icon.png')).resize({ width: 16, height: 16 })
+    }
+    tray = new Tray(icon)
+    tray.setToolTip('TinyDo')
+
+    trayTodayItem = new MenuItem({ label: '', enabled: false })
+    const menu = Menu.buildFromTemplate([
+      trayTodayItem,
+      { type: 'separator' },
+      { label: '打开 TinyDo', click: showMainWindow },
+      { type: 'separator' },
+      { label: '退出 TinyDo', click: () => app.quit() },
+    ])
+
+    // 不用 setContextMenu：那会让 macOS 左键也弹菜单。
+    // 左键=呼出主窗口，右键=菜单。
+    tray.on('click', showMainWindow)
+    tray.on('right-click', () => tray.popUpContextMenu(menu))
+    updateTrayMenu()
+    info('Tray created')
+  } catch (err) {
+    error('Tray init failed: ' + err.message)
+  }
+}
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+function updateTrayMenu() {
+  if (!tray || !trayTodayItem) return
+  trayTodayItem.label = trayTodayCount > 0 ? `今日未完成 ${trayTodayCount} 件` : '今天没有待办 🎉'
+}
+
+// 渲染层在任务变化时推送「今日未完成」数量
+ipcMain.handle('tray:set-count', (_event, n) => {
+  trayTodayCount = Number(n) || 0
+  updateTrayMenu()
+})
+
 app.whenReady().then(() => {
   info('App is ready')
   createWindow()
+  createTray()
 
   // 外部助手（CLI / DSH 插件）本地桥接：只在 127.0.0.1 监听，
   // 是否真正开监听由渲染层按「设置 → 外部助手」开关同步过来。
