@@ -30,6 +30,17 @@
 | **全天任务** | All-Day Task | 没有具体时间、仅绑定到某一天的任务。 |
 | **提醒** | Reminder | 在指定时间通知用户处理任务的机制。 |
 
+## 编辑器（ADR-0005）
+
+| 术语 | 英文 | 定义 |
+|------|------|------|
+| **Markdown 契约** | Markdown Contract | ADR-0005 决策：`content` 字段一律按 Markdown 文本解释。纯文本是合法 Markdown 的子集，因此存量数据与 AI/导入写入零迁移。 |
+| **所见即所得编辑器** | WYSIWYG Editor | 编辑时直接呈现最终渲染效果（看到样式而非 Markdown 语法符号），底层仍以 Markdown 字符串为数据源。滴答清单同款范式。 |
+| **Tiptap** | — | 本项目选用的富文本编辑器框架（ProseMirror 系，Vue 3 官方支持），负责编辑交互，序列化输出 Markdown。 |
+| **剥离层** | Plain-Text Exporter | 把 Markdown 剥成纯文本的工具层，供任务搜索与列表预览使用（对应滴答的 `SemanticMarkdownSearchExporter`）。 |
+| **附件占位引用** | Attachment Placeholder | 图片在 content 中的存在形式：`![](tinydo-attachment://<id>)`。字符串本体不含图片数据，二进制存附件库，同步时上传 Kodo。 |
+| **附件库** | Attachment Store | 本地存储图片二进制的模块（Web: IndexedDB / Electron: userData 文件），以内容 id 索引，配合同步引擎上传云端。 |
+
 ## 同步
 
 | 术语 | 英文 | 定义 |
