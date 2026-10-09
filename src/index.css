@@ -166,7 +166,9 @@ input:focus, select:focus, textarea:focus {
   box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.05) !important;
 }
 
-/* 自定义复选框（圆角方形） */
+/* 自定义复选框（圆角方形）
+   边框色走 --prio-border 变量：任务列表按优先级染色（对齐滴答），
+   表单等未设置变量的场景回退默认灰 */
 .checkbox-tick {
   appearance: none;
   width: 18px;
@@ -176,7 +178,7 @@ input:focus, select:focus, textarea:focus {
   transition: all 150ms ease;
   flex-shrink: 0;
   position: relative;
-  border: 2px solid var(--text-tertiary);
+  border: 2px solid var(--prio-border, var(--text-tertiary));
   background-color: transparent;
 }
 .checkbox-tick:checked {
@@ -195,12 +197,12 @@ input:focus, select:focus, textarea:focus {
   transform: rotate(45deg);
 }
 .checkbox-tick:hover {
-  border-color: var(--color-accent);
+  border-color: var(--prio-border, var(--color-accent));
 }
 
 /* 暗黑模式下复选框适配 */
 .dark .checkbox-tick {
-  border-color: #555555;
+  border-color: var(--prio-border, #555555);
   background-color: rgba(255, 255, 255, 0.05);
 }
 .dark .checkbox-tick:checked {
@@ -208,7 +210,7 @@ input:focus, select:focus, textarea:focus {
   background-color: var(--color-accent);
 }
 .dark .checkbox-tick:hover {
-  border-color: var(--color-accent);
+  border-color: var(--prio-border, var(--color-accent));
   background-color: rgba(232, 140, 49, 0.1);
 }
 .dark .checkbox-tick:checked:hover {

@@ -45,6 +45,7 @@
           :checked="todo.completed"
           class="checkbox-tick"
           style="width: 14px; height: 14px;"
+          :style="{ '--prio-border': prioBorderColor(todo.priority) }"
           @change="handleToggle(todo.id)"
         />
         <span
@@ -84,6 +85,7 @@
 import { ref } from 'vue'
 import type { Todo } from '../../stores/todo'
 import type { QuadrantId } from '../../stores/matrix'
+import { prioBorderColor } from '../../services/priority-style'
 
 const props = defineProps<{
   quadrantId: QuadrantId

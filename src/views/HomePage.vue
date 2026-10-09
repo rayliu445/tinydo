@@ -213,11 +213,12 @@
                 />
               </button>
               <span v-else class="w-5 h-5 flex-shrink-0" aria-hidden="true"></span>
-              <!-- 复选框 -->
+              <!-- 复选框（边框随优先级染色，对齐滴答） -->
               <input
                 type="checkbox"
                 :checked="row.todo!.completed"
                 class="checkbox-tick"
+                :style="{ '--prio-border': prioBorderColor(row.todo!.priority) }"
                 @change="todoStore.toggleTodo(row.todo!.id)"
               />
 
@@ -289,6 +290,7 @@ import { ref, onMounted, computed, watch, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useTodoStore, sortWithHierarchy, type Todo } from '../stores/todo'
 import { queryTasks } from '../services/task-query'
+import { prioBorderColor } from '../services/priority-style'
 import { storeToRefs } from 'pinia'
 import AppIcon from '../components/icons/AppIcon.vue'
 import EmptyState from '../components/EmptyState.vue'

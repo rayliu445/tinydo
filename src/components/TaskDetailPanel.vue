@@ -131,6 +131,7 @@
               type="checkbox"
               :checked="st.completed"
               class="checkbox-tick"
+              :style="{ '--prio-border': prioBorderColor(st.priority) }"
               @change="todoStore.toggleTodo(st.id)"
             />
             <span
@@ -232,6 +233,7 @@ import { ref, computed, watch } from 'vue'
 import { useTodoStore, sortWithHierarchy } from '../stores/todo'
 import { useAiChatStore } from '../stores/ai-chat'
 import { useSettingsStore } from '../stores/settings'
+import { prioBorderColor } from '../services/priority-style'
 import { storeToRefs } from 'pinia'
 import AppIcon from './icons/AppIcon.vue'
 

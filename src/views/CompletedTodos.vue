@@ -58,6 +58,7 @@
             type="checkbox"
             :checked="todo.completed"
             class="checkbox-tick"
+            :style="{ '--prio-border': prioBorderColor(todo.priority) }"
             @click.stop
             @change="handleToggle(todo.id)"
           />
@@ -106,6 +107,7 @@ import { useTodoStore, sortWithHierarchy, type Todo } from '../stores/todo'
 import { storeToRefs } from 'pinia'
 import AppIcon from '../components/icons/AppIcon.vue'
 import { showContextMenu, type ContextMenuItem } from '../stores/context-menu'
+import { prioBorderColor } from '../services/priority-style'
 import EmptyState from '../components/EmptyState.vue'
 import SortOrderToggle from '../components/SortOrderToggle.vue'
 import { useSettingsStore } from '../stores/settings'
